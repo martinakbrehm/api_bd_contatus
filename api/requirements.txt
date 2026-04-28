@@ -1,0 +1,23 @@
+# API Segura — Dependências
+# ================================================================
+# Instale com: pip install -r requirements.txt
+
+# ── Framework ──────────────────────────────────────────────────
+flask>=3.0
+
+# ── JWT Tokens ─────────────────────────────────────────────────
+PyJWT>=2.8
+
+# ── Banco de dados ─────────────────────────────────────────────
+mysql-connector-python>=8.0
+pandas>=2.0
+
+# ── Utilitários (já usados pelo projeto pai) ──────────────────
+openpyxl>=3.1
+
+# ── Testes ─────────────────────────────────────────────────────
+pytest>=8.0
+
+# ── Produção (opcional) ───────────────────────────────────────
+# gunicorn>=21.2    # WSGI server para Linux
+# waitress>=2.1    # WSGI server para Windows
