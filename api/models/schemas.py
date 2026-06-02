@@ -28,6 +28,8 @@ UFS_VALIDAS = {
 GENEROS_VALIDOS = {"M", "F", "MASCULINO", "FEMININO", "AMBOS"}
 EMAIL_OPCOES = {"obrigatorio", "nao_filtrar", "nao", "preferencial"}
 TELEFONE_OPCOES = {"movel", "fixo", "ambos"}
+# Filtro indexado: exige ao menos um telefone preenchido no banco
+TEM_TELEFONE_OPCOES = {"obrigatorio", "nao_filtrar"}
 
 
 class ValidationError(Exception):
@@ -167,12 +169,19 @@ def validar_consulta(data: dict) -> dict:
         email = "nao_filtrar"
     resultado["email"] = email
 
-    # ── Tipo de telefone ─────────────────────────────────────
+    # ── Tipo de telefone (filtro Python: movel/fixo/ambos) ──────────────
     tipo_tel = str(data.get("tipo_telefone", "movel")).strip().lower()
     if tipo_tel not in TELEFONE_OPCOES:
         erros.append(f"Tipo de telefone inválido: '{tipo_tel}'. Use: {', '.join(sorted(TELEFONE_OPCOES))}")
         tipo_tel = "movel"
     resultado["tipo_telefone"] = tipo_tel
+
+    # ── Existência de telefone (filtro indexado no banco) ────────────────
+    tem_telefone = str(data.get("tem_telefone", "nao_filtrar")).strip().lower()
+    if tem_telefone not in TEM_TELEFONE_OPCOES:
+        erros.append(f"Opção de telefone inválida: '{tem_telefone}'. Use: {', '.join(sorted(TEM_TELEFONE_OPCOES))}")
+        tem_telefone = "nao_filtrar"
+    resultado["tem_telefone"] = tem_telefone
 
     # ── CBOs (opcional) ──────────────────────────────────────
     cbos = data.get("cbos", [])

@@ -81,11 +81,33 @@ CORS_MAX_AGE = 3600
 # ── Segurança Geral ───────────────────────────────────────────
 ENFORCE_HTTPS = os.environ.get("API_ENFORCE_HTTPS", "false").lower() == "true"
 MAX_CONTENT_LENGTH = 1 * 1024 * 1024   # 1 MB máximo por request
-REQUEST_TIMEOUT = 30                    # segundos
+
+# Timeout padrão de requisição (segundos) — usado quando o role não é reconhecido
+REQUEST_TIMEOUT = int(os.environ.get("API_REQUEST_TIMEOUT", "60"))
+
+# Timeout por role (segundos) — roles com mais permissões recebem mais tempo
+REQUEST_TIMEOUT_BY_ROLE = {
+    "admin":    int(os.environ.get("API_REQUEST_TIMEOUT_ADMIN",    "180")),  # queries pesadas
+    "user":     int(os.environ.get("API_REQUEST_TIMEOUT_USER",      "90")),  # padrão
+    "readonly": int(os.environ.get("API_REQUEST_TIMEOUT_READONLY",  "30")),  # contagem/preview
+}
 
 # Quantidade máxima de registros retornados por consulta
 MAX_REGISTROS_POR_CONSULTA = 10000
 MAX_REGISTROS_PADRAO = 1000
+
+# ── Consulta em Lotes ─────────────────────────────────────────
+# A consulta busca no banco em lotes (LIMIT/OFFSET), limpa cada lote
+# e acumula registros válidos até atingir a quantidade pedida.
+#
+# BATCH_FATOR: multiplica a quantidade pedida para o tamanho do lote,
+#   compensando os registros descartados na limpeza.
+#   Ex: pedido=1000, fator=1.5 → lote=1500 do banco.
+#
+# BATCH_MAX_ITERACOES: número máximo de lotes por consulta, evita
+#   loop infinito em bases com alta taxa de descarte.
+BATCH_FATOR = float(os.environ.get("API_BATCH_FATOR", "1.5"))
+BATCH_MAX_ITERACOES = int(os.environ.get("API_BATCH_MAX_ITER", "10"))
 
 # ── Auditoria ─────────────────────────────────────────────────
 AUDIT_LOG_FILE = LOGS_DIR / "audit.log"
