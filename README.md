@@ -1,4 +1,4 @@
-# API de Geração de Listas — bd_contatus
+# API de consulta de contatos
 
 API REST para consulta, filtragem e extração de dados de contatos pessoa física, com pipeline de limpeza integrado e exportação XLSX. Construída com Flask sobre um banco MySQL (AWS RDS).
 
