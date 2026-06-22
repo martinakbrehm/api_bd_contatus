@@ -266,6 +266,45 @@ O enriquecimento usa um padrão clássico de engenharia de dados: **staging tabl
 
 ---
 
+### Tabela `bairros_alta_renda` e coleta via Scrapy
+
+Quando o filtro `alta_renda=true` é enviado, a API injeta automaticamente os bairros nobres da cidade antes de montar a query. O dado vem de uma tabela própria criada para esse fim:
+
+```sql
+CREATE TABLE bairros_alta_renda (
+    id       INT UNSIGNED     AUTO_INCREMENT PRIMARY KEY,
+    uf_id    INT              NOT NULL,  -- FK para uf.ID
+    cidade   VARCHAR(100)     NOT NULL,
+    bairro   VARCHAR(100)     NOT NULL,
+    ranking  TINYINT UNSIGNED NOT NULL DEFAULT 2,
+    -- 1 = Premium, 2 = Classe A, 3 = Classe B+
+    UNIQUE KEY uk_uf_id_cidade_bairro       (uf_id, cidade, bairro),
+    INDEX      idx_uf_id_cidade_rank_bairro (uf_id, cidade, ranking, bairro)
+);
+```
+
+O índice composto `(uf_id, cidade, ranking, bairro)` cobre a query exata usada pelo `alta_renda.py`: filtra por UF e cidade, ordena por ranking e retorna a lista de bairros em um único index scan.
+
+**Como os dados foram coletados**
+
+Os bairros foram coletados via [Scrapy](https://scrapy.org/) em fontes públicas de dados imobiliários e socioeconômicos — portais de classificados de imóveis, rankings de CEP por renda média e dados do IBGE. A arquitetura do crawler seguiu o padrão Scrapy completo:
+
+- **Spiders**: uma spider por fonte, usando seletores CSS e XPath para extrair pares `(cidade, bairro, indicador_renda)`. Páginas de listagem com paginação foram tratadas com `response.follow()` encadeado; resultados assíncronos (JavaScript-rendered) via `scrapy-playwright` onde necessário.
+- **Items e ItemLoaders**: campos declarados como `scrapy.Item` com `InputProcessor` para normalização na entrada (strip, uppercase, remoção de acentos via `unicodedata.normalize`) e `TakeFirst` como `OutputProcessor` para deduplicação por campo.
+- **Pipelines**: pipeline de validação descarta itens sem cidade ou bairro reconhecíveis; pipeline de persistência faz `INSERT ... ON DUPLICATE KEY UPDATE` diretamente no MySQL, tornando a coleta idempotente — pode ser reexecutada sem duplicar dados.
+- **Middlewares**: `AutoThrottle` habilitado para ajustar automaticamente o delay entre requests baseado na latência do servidor; `ROBOTSTXT_OBEY = True` em todas as spiders; `DEFAULT_REQUEST_HEADERS` com User-Agent real para não ser bloqueado por filtros triviais.
+- **Deduplicação de URLs**: filtro `RFPDupeFilter` padrão do Scrapy com fingerprint por URL normalizada, evitando reprocessar a mesma página em crawls incrementais.
+
+Após a coleta, uma etapa de curadoria manual classificou cada bairro nos três níveis de ranking com base nos indicadores de renda coletados. O SQL de carga final usa `ON DUPLICATE KEY UPDATE ranking = VALUES(ranking)` para que atualizações de ranking possam ser reaplicadas sem recriar a tabela.
+
+A tabela cobre todas as 27 UFs com foco nas cidades de maior volume no banco. Cidades menores sem mapeamento retornam lista vazia — o filtro `alta_renda=true` nesses casos é ignorado silenciosamente.
+
+**Cache em memória**
+
+Para não rebater no banco a cada request, `alta_renda.py` mantém um dict `{(uf, cidade): [bairros]}` em memória com TTL de 30 minutos. O cache é por processo — em produção com múltiplos workers Gunicorn cada worker tem o seu, o que é aceitável dado que o dado muda raramente.
+
+---
+
 ## Decisões de projeto
 
 ### Por que cursor paginado e não OFFSET?
