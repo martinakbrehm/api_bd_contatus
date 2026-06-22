@@ -192,7 +192,7 @@ def api_key_headers(user_api_key):
 @pytest.fixture
 def filtro_basico():
     """Filtro mínimo válido para consultas."""
-    return {"ufs": ["SP"]}
+    return {"ufs": ["SP"], "cidades": ["SAO PAULO"]}
 
 
 @pytest.fixture

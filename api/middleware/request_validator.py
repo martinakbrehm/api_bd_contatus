@@ -145,7 +145,7 @@ def request_validator_middleware(app: Flask) -> None:
         # ── Content-Type para métodos com body ───────────────
         if request.method in ("POST", "PUT", "PATCH"):
             content_type = request.content_type or ""
-            allowed_types = ("application/json", "application/x-www-form-urlencoded")
+            allowed_types = ("application/json", "application/x-www-form-urlencoded", "multipart/form-data")
             if not any(ct in content_type for ct in allowed_types):
                 return jsonify({
                     "erro": "Content-Type inválido. Use 'application/json'.",

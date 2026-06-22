@@ -66,7 +66,18 @@ def with_timeout(f=None, *, timeout: int | None = None):
                 role = getattr(g, "auth_user", {}).get("role", "")
                 _timeout = REQUEST_TIMEOUT_BY_ROLE.get(role, REQUEST_TIMEOUT)
 
-            ctx_func = copy_current_request_context(func)
+            # copy_current_request_context não preserva g — capturamos manualmente
+            try:
+                g_snapshot = {k: v for k, v in vars(g._get_current_object()).items()}
+            except Exception:
+                g_snapshot = {}
+
+            def _func_with_g(*a, **kw):
+                for k, v in g_snapshot.items():
+                    setattr(g, k, v)
+                return func(*a, **kw)
+
+            ctx_func = copy_current_request_context(_func_with_g)
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(ctx_func, *args, **kwargs)

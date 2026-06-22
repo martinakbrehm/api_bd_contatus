@@ -388,7 +388,9 @@ def limpar_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
     # ── 1. Campos com "EM VALIDACAO" e strings inválidas ─────────────
     # Verificamos os campos de texto mais críticos
-    campos_texto = ["NOME", "BAIRRO", "CIDADE", "UF", "ENDERECO"]
+    # UF é excluído: é enum controlado (2 letras) e códigos como "SC" estão
+    # na lista de strings inválidas como placeholder, mas são UFs válidas.
+    campos_texto = ["NOME", "BAIRRO", "CIDADE", "ENDERECO"]
     campos_texto_existentes = [c for c in campos_texto if c in df.columns]
 
     mask_validacao = pd.Series(False, index=df.index)
@@ -448,15 +450,16 @@ def limpar_dataframe(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 def _imprimir_relatorio(r: dict):
     total_removido = r["total_inicial"] - r["total_final"]
-    print(
-        f"[LIMPEZA] {r['total_inicial']} → {r['total_final']} "
+    msg = (
+        f"[LIMPEZA] {r['total_inicial']} -> {r['total_final']} "
         f"({total_removido} removidos) | "
         f"EM_VALIDACAO: {r['removidos_validacao']} | "
         f"CPF: {r['removidos_cpf']} | "
         f"NOME: {r['removidos_nome']} | "
-        f"Emails inválidos: {r['removidos_email']} | "
-        f"Tels inválidos: {r['removidos_telefone']}"
+        f"Emails invalidos: {r['removidos_email']} | "
+        f"Tels invalidos: {r['removidos_telefone']}"
     )
+    print(msg.encode("ascii", errors="replace").decode("ascii"))
 
 
 def relatorio_html(r: dict) -> str:

@@ -1,0 +1,42 @@
+# ================================================================
+# .dockerignore — raiz do projeto
+# Exclui arquivos sensíveis e desnecessários da imagem Docker.
+# ================================================================
+
+# ── Credenciais e segredos (NUNCA incluir na imagem) ──────────
+api/config_db.py
+api/.env
+api/api_keys.json
+**/.env
+**/*.pem
+**/*.key
+**/*.p12
+
+# ── Saídas e temporários ──────────────────────────────────────
+api/output/
+api/logs/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/.mypy_cache/
+
+# ── Desenvolvimento ───────────────────────────────────────────
+api/tests/
+**/*.xlsx
+**/*.txt
+extrair_sc.py
+bairros_cidades_grandes_sc.txt
+xlsx/
+xlsx_padrao_formatacao.txt
+
+# ── Git ───────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── IDEs ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo

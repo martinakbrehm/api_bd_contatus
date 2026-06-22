@@ -6,7 +6,11 @@
 from api.config_db import DB_CONFIG
 
 # Nome da tabela principal (conforme a query base)
-TABELA_PRINCIPAL = "latest_contacts"
+TABELA_PRINCIPAL  = "latest_contacts"
+
+# Tabelas auxiliares de CBO (profissão)
+TABELA_CBO_CPF    = "all_cpf_cbo"   # relação CPF ↔ código CBO
+TABELA_CBO        = "all_cbo"        # descrição de cada código CBO
 
 # ----------------------------------------------------------------
 # MAPEAMENTO DE COLUNAS NA TABELA
@@ -32,8 +36,9 @@ COLUNAS = {
     "telefone_4":       "telefone_4",
     "telefone_5":       "telefone_5",
     "telefone_6":       "telefone_6",
-    # Campos opcionais — verificar existência no banco:
-    "cbo":              "cbo",     # código CBO (profissão)
+    # Campos das tabelas de CBO (join via all_cpf_cbo + all_cbo):
+    "cbo":              "cbo",       # código CBO em all_cpf_cbo
+    "atividade":        "atividade", # descrição da profissão em all_cbo
     # RENDA: não disponível no banco — campo removido
     # SCORE: não disponível no banco — campo removido
 }
@@ -42,7 +47,7 @@ COLUNAS = {
 # Colunas opcionais — defina False se a coluna não existir no banco
 # ----------------------------------------------------------------
 COLUNAS_OPCIONAIS = {
-    "cbo":    False,   # CBO não existe no banco atual
+    "cbo":    True,    # tabelas all_cpf_cbo + all_cbo existem no banco
 }
 
 # ----------------------------------------------------------------

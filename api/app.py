@@ -13,6 +13,9 @@ import time
 from flask import Flask, g, jsonify, request
 
 from api.config import DEBUG, MAX_CONTENT_LENGTH
+from api.utils.json_logger import configurar_logging
+
+configurar_logging()
 
 
 def create_app() -> Flask:
@@ -66,13 +69,44 @@ def create_app() -> Flask:
     from api.routes.consulta import consulta_bp
     from api.routes.health import health_bp
     from api.routes.admin import admin_bp
+    from api.routes.enriquecimento import enriquecimento_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(consulta_bp)
     app.register_blueprint(health_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(enriquecimento_bp)
 
-    # ── 6. Request/Response Audit Logging ────────────────────
+    # ── 6. Limpeza automática de tokens expirados (output/temp/) ──────────
+    # APScheduler remove parquets com mais de 30 minutos a cada 10 minutos.
+    # daemon=True garante que o scheduler não impedit o shutdown da aplicação.
+    if not app.testing:
+        import os as _os
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from api.routes.consulta import _DIR_TEMP
+
+        def _limpar_temp():
+            agora = time.time()
+            for _f in _DIR_TEMP.glob("*.parquet"):
+                try:
+                    if agora - _f.stat().st_mtime > 1800:
+                        _f.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            for _f in _DIR_TEMP.glob("*.json"):
+                try:
+                    if agora - _f.stat().st_mtime > 1800:
+                        _f.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+        # Evita duplicar o scheduler no reloader do Flask (debug mode)
+        if _os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+            _scheduler = BackgroundScheduler(daemon=True)
+            _scheduler.add_job(_limpar_temp, trigger="interval", minutes=10)
+            _scheduler.start()
+
+    # ── 7. Request/Response Audit Logging ────────────────────
     @app.after_request
     def _audit_log(response):
         """Loga toda requisição para auditoria."""

@@ -173,7 +173,7 @@ class TestAuthLogout:
         assert resp.status_code == 200
 
     def test_logout_sem_auth(self, client):
-        resp = client.post("/api/v1/auth/logout")
+        resp = client.post("/api/v1/auth/logout", content_type="application/json")
         assert resp.status_code == 401
 
 
@@ -231,7 +231,7 @@ class TestConsultaAutorizacao:
 
             resp = client.post(
                 "/api/v1/consulta/contagem",
-                json={"ufs": ["SP"]},
+                json={"ufs": ["SP"], "cidades": ["SAO PAULO"]},
                 headers=readonly_headers,
             )
             assert resp.status_code == 200
@@ -254,7 +254,7 @@ class TestConsultaAutorizacao:
         with patch("api.routes.consulta._executar_query", return_value=mock_df):
             resp = client.post(
                 "/api/v1/consulta/preview",
-                json={"ufs": ["SP"], "quantidade": 5},
+                json={"ufs": ["SP"], "cidades": ["SAO PAULO"], "quantidade": 5},
                 headers=readonly_headers,
             )
             assert resp.status_code == 200
@@ -278,7 +278,7 @@ class TestConsultaAutorizacao:
         with patch("api.routes.consulta._executar_query", return_value=mock_df):
             resp = client.post(
                 "/api/v1/consulta",
-                json={"ufs": ["SP"], "quantidade": 1},
+                json={"ufs": ["SP"], "cidades": ["SAO PAULO"], "quantidade": 1},
                 headers=admin_headers,
             )
             assert resp.status_code == 200
@@ -321,7 +321,7 @@ class TestConsultaValidacao:
         with patch("api.routes.consulta._executar_query", return_value=pd.DataFrame()):
             resp = client.post(
                 "/api/v1/consulta",
-                json={"ufs": ["SP"]},
+                json={"ufs": ["SP"], "cidades": ["SAO PAULO"]},
                 headers=admin_headers,
             )
             assert resp.status_code == 200
@@ -338,7 +338,7 @@ class TestConsultaValidacao:
 
             resp = client.post(
                 "/api/v1/consulta/contagem",
-                json={"ufs": ["SP", "RJ"], "genero": "F", "idade_min": 25, "idade_max": 50},
+                json={"ufs": ["SP", "RJ"], "cidades": ["SAO PAULO"], "genero": "F", "idade_min": 25, "idade_max": 50},
                 headers=admin_headers,
             )
             assert resp.status_code == 200
@@ -350,7 +350,7 @@ class TestConsultaValidacao:
     def test_request_id_na_resposta(self, client, admin_headers):
         resp = client.post(
             "/api/v1/consulta/contagem",
-            json={"ufs": ["SP"]},
+            json={"ufs": ["SP"], "cidades": ["SAO PAULO"]},
             headers={**admin_headers, "X-Request-ID": "test-id-999"},
         )
         # Independente de sucesso/erro, request_id deve estar presente

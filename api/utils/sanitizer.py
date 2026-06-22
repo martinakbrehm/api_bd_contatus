@@ -132,11 +132,11 @@ def sanitizar_string(valor: str, max_length: int = 500) -> str:
     # Remover caracteres de controle (exceto newline e tab)
     valor = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", valor)
 
+    # Strip e normalizar espaços antes de truncar
+    valor = " ".join(valor.split())
+
     # Limitar comprimento
     valor = valor[:max_length]
-
-    # Strip e normalizar espaços
-    valor = " ".join(valor.split())
 
     return valor.strip()
 

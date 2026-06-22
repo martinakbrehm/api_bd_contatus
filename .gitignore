@@ -1,6 +1,8 @@
 # ── Credenciais e dados sigilosos ──────────────────────────────
 config_db.py
+api/.env
 api/api_keys.json
+.claude/
 
 # ── Logs ───────────────────────────────────────────────────────
 api/logs/

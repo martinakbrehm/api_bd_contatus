@@ -80,7 +80,7 @@ CORS_MAX_AGE = 3600
 
 # ── Segurança Geral ───────────────────────────────────────────
 ENFORCE_HTTPS = os.environ.get("API_ENFORCE_HTTPS", "false").lower() == "true"
-MAX_CONTENT_LENGTH = 1 * 1024 * 1024   # 1 MB máximo por request
+MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB máximo por request
 
 # Timeout padrão de requisição (segundos) — usado quando o role não é reconhecido
 REQUEST_TIMEOUT = int(os.environ.get("API_REQUEST_TIMEOUT", "60"))
@@ -93,7 +93,7 @@ REQUEST_TIMEOUT_BY_ROLE = {
 }
 
 # Quantidade máxima de registros retornados por consulta
-MAX_REGISTROS_POR_CONSULTA = 10000
+MAX_REGISTROS_POR_CONSULTA = 50000
 MAX_REGISTROS_PADRAO = 1000
 
 # ── Consulta em Lotes ─────────────────────────────────────────
@@ -106,18 +106,20 @@ MAX_REGISTROS_PADRAO = 1000
 #
 # BATCH_MAX_ITERACOES: número máximo de lotes por consulta, evita
 #   loop infinito em bases com alta taxa de descarte.
-BATCH_FATOR = float(os.environ.get("API_BATCH_FATOR", "1.5"))
-BATCH_MAX_ITERACOES = int(os.environ.get("API_BATCH_MAX_ITER", "10"))
+BATCH_SIZE_DB = int(os.environ.get("API_BATCH_SIZE_DB", "5000"))    # linhas por query ao banco
+BATCH_MAX_ITERACOES = int(os.environ.get("API_BATCH_MAX_ITER", "20"))  # máx iterações (50k / 5k = 10 mín)
+
+# ── Cache Redis ───────────────────────────────────────────────
+# REDIS_URL ex: redis://localhost:6379/0  ou  redis://:senha@host:6379/0
+# Se vazio, cache é desabilitado (graceful degradation).
+CACHE_TTL_SECONDS = int(os.environ.get("CACHE_TTL_SECONDS", "1800"))  # 30 min
 
 # ── Auditoria ─────────────────────────────────────────────────
 AUDIT_LOG_FILE = LOGS_DIR / "audit.log"
 SECURITY_LOG_FILE = LOGS_DIR / "security.log"
 
 # ── Banco de Dados ────────────────────────────────────────────
-# Importa as configs do projeto pai
-import sys
-sys.path.insert(0, str(PROJECT_DIR))
-from config_db import DB_CONFIG as _DB_CONFIG
+from api.config_db import DB_CONFIG as _DB_CONFIG
 DB_CONFIG = _DB_CONFIG.copy()
 
 # Pool de conexões (evita excesso de conexões abertas)

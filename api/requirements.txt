@@ -10,14 +10,19 @@ PyJWT>=2.8
 
 # ── Banco de dados ─────────────────────────────────────────────
 mysql-connector-python>=8.0
-pandas>=2.0
 
-# ── Utilitários (já usados pelo projeto pai) ──────────────────
+# ── Processamento de dados ─────────────────────────────────────
+pandas>=2.0
+pyarrow>=12.0
+
+# ── Utilitários ───────────────────────────────────────────────
 openpyxl>=3.1
+APScheduler>=3.10
+redis>=5.0
 
 # ── Testes ─────────────────────────────────────────────────────
 pytest>=8.0
 
-# ── Produção (opcional) ───────────────────────────────────────
-# gunicorn>=21.2    # WSGI server para Linux
-# waitress>=2.1    # WSGI server para Windows
+# ── Produção ──────────────────────────────────────────────────
+gunicorn>=21.2        # WSGI server para Linux/Docker
+waitress>=2.1         # WSGI server para Windows

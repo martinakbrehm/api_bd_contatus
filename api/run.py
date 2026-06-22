@@ -115,7 +115,7 @@ def main():
     port = args.port or PORT
 
     print("\n" + "=" * 60)
-    print("  🔒 API SEGURA - Projeto Listas PF")
+    print("  API SEGURA - Projeto Listas PF")
     print("=" * 60)
     print(f"  Host:    {host}")
     print(f"  Porta:   {port}")
