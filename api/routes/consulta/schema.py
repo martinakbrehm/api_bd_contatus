@@ -303,9 +303,6 @@ def validar_consulta(data: dict) -> dict:
             if quantidade < 1:
                 erros.append("'quantidade' deve ser pelo menos 1.")
                 quantidade = None
-            elif quantidade > 10_000:
-                erros.append("'quantidade' não pode exceder 10.000.")
-                quantidade = None
         except (ValueError, TypeError):
             erros.append("'quantidade' deve ser um número inteiro.")
             quantidade = None

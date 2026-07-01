@@ -173,9 +173,10 @@ class TestValidarConsulta:
         with pytest.raises(ValidationError):
             validar_consulta({**_BASE, "quantidade": -10})
 
-    def test_quantidade_acima_10000_rejeitada(self):
-        with pytest.raises(ValidationError):
-            validar_consulta({**_BASE, "quantidade": 99999})
+    def test_quantidade_grande_aceita(self):
+        """Schema não limita quantidade — o endpoint aplica cap por role. Listas podem ter até 1M."""
+        result = validar_consulta({**_BASE, "quantidade": 500_000})
+        assert result["quantidade"] == 500_000
 
     def test_quantidade_nao_numerica(self):
         with pytest.raises(ValidationError):
