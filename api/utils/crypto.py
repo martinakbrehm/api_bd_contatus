@@ -3,11 +3,13 @@ api/utils/crypto.py
 -------------------
 Utilitários criptográficos para a API.
 
-Funcionalidades:
-  - HMAC para assinatura de requests
-  - Hash seguro de senhas (bcrypt-like com hashlib)
-  - Geração de tokens seguros
-  - Criptografia simétrica simplificada para dados em trânsito
+Padrão de hash de senhas: argon2id (OWASP recomendação #1).
+  - Memory-hard: resistente a ataques por GPU/ASIC
+  - Hash auto-descritivo: inclui algoritmo, parâmetros e salt na string
+  - Formato: $argon2id$v=19$m=65536,t=3,p=2$<salt_b64>$<hash_b64>
+
+Migração transparente: hashes legados (PBKDF2 formato hash$salt)
+são aceitos no login e re-hasheados automaticamente para argon2id.
 """
 
 import hashlib
@@ -16,27 +18,48 @@ import secrets
 import time
 from typing import Optional
 
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
-def gerar_token_seguro(nbytes: int = 32) -> str:
-    """Gera um token criptograficamente seguro (hex)."""
-    return secrets.token_hex(nbytes)
+# Parâmetros argon2id (OWASP Interactive login profile)
+# m=65536 (64 MB), t=3 iterações, p=2 threads
+_ph = PasswordHasher(
+    time_cost=3,
+    memory_cost=65536,
+    parallelism=2,
+    hash_len=32,
+    salt_len=16,
+)
 
 
-def gerar_token_url_safe(nbytes: int = 32) -> str:
-    """Gera um token URL-safe (base64)."""
-    return secrets.token_urlsafe(nbytes)
-
-
-def hash_senha(senha: str, salt: Optional[str] = None) -> tuple[str, str]:
+def hash_senha(senha: str) -> str:
     """
-    Gera hash seguro de senha usando PBKDF2-HMAC-SHA256.
-    
-    Retorna (hash_hex, salt_hex).
-    Em produção, use bcrypt ou argon2 (mais resistentes a GPU).
+    Gera hash argon2id da senha.
+    Retorna string auto-descritiva: $argon2id$v=19$m=65536,t=3,p=2$...
     """
-    if salt is None:
-        salt = secrets.token_hex(16)
+    return _ph.hash(senha)
 
+
+def verificar_senha(senha: str, hash_armazenado: str) -> bool:
+    """
+    Verifica senha contra hash argon2id.
+    Retorna True se correta, False caso contrário.
+    """
+    try:
+        return _ph.verify(hash_armazenado, senha)
+    except (VerifyMismatchError, VerificationError, InvalidHashError):
+        return False
+
+
+def precisa_rehash(hash_armazenado: str) -> bool:
+    """True se o hash foi gerado com parâmetros desatualizados."""
+    return _ph.check_needs_rehash(hash_armazenado)
+
+
+# ── Legado: PBKDF2 (mantido apenas para migração transparente) ───────────────
+
+def _hash_senha_pbkdf2(senha: str, salt: str) -> str:
+    """Recalcula hash PBKDF2 legado. Usado só na verificação de migração."""
     dk = hashlib.pbkdf2_hmac(
         "sha256",
         senha.encode("utf-8"),
@@ -44,14 +67,25 @@ def hash_senha(senha: str, salt: Optional[str] = None) -> tuple[str, str]:
         iterations=100_000,
         dklen=32,
     )
-    return dk.hex(), salt
+    return dk.hex()
 
 
-def verificar_senha(senha: str, hash_esperado: str, salt: str) -> bool:
-    """Verifica uma senha contra seu hash."""
-    hash_calculado, _ = hash_senha(senha, salt)
-    # Comparação em tempo constante (anti-timing attack)
-    return hmac.compare_digest(hash_calculado, hash_esperado)
+def verificar_senha_legado(senha: str, hash_armazenado: str) -> bool:
+    """
+    Verifica senhas no formato legado PBKDF2 (hash_hex$salt_hex).
+    Retorna True se a senha bate com o hash legacy.
+    """
+    try:
+        hash_hex, salt_hex = hash_armazenado.split("$", 1)
+    except ValueError:
+        return False
+    calculado = _hash_senha_pbkdf2(senha, salt_hex)
+    return hmac.compare_digest(calculado, hash_hex)
+
+
+def is_hash_argon2(hash_armazenado: str) -> bool:
+    """Detecta se o hash está no formato argon2 (novo padrão)."""
+    return hash_armazenado.startswith("$argon2")
 
 
 def hmac_sign(payload: str, secret: str) -> str:

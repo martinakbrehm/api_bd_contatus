@@ -17,7 +17,13 @@ from api.auth.decorators import _get_client_ip, require_auth
 from api.auth.jwt_handler import criar_access_token, criar_refresh_token, revogar_token, validar_token
 from api.models.schemas import ValidationError, validar_login, validar_login_usuario
 from api.utils.audit_logger import log_request, log_security_event
-from api.utils.crypto import verificar_senha
+from api.utils.crypto import (
+    hash_senha,
+    is_hash_argon2,
+    precisa_rehash,
+    verificar_senha,
+    verificar_senha_legado,
+)
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
 
@@ -144,16 +150,26 @@ def login_usuario():
         except (ValueError, TypeError):
             pass
 
-    senha_hash = usuario.get("senha_hash", "")
-    try:
-        hash_hex, salt_hex = senha_hash.split("$", 1)
-    except ValueError:
-        log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="formato de hash inválido")
-        return jsonify({"erro": _MSG_CREDENCIAIS}), 401
+    senha_armazenada = usuario.get("senha_hash", "")
+    senha_ok = False
+    rehash_necessario = False
 
-    if not verificar_senha(dados["senha"], hash_hex, salt_hex):
+    if is_hash_argon2(senha_armazenada):
+        senha_ok = verificar_senha(dados["senha"], senha_armazenada)
+        if senha_ok and precisa_rehash(senha_armazenada):
+            rehash_necessario = True
+    else:
+        # Hash legado PBKDF2 (hash_hex$salt_hex) — migração transparente
+        senha_ok = verificar_senha_legado(dados["senha"], senha_armazenada)
+        if senha_ok:
+            rehash_necessario = True
+
+    if not senha_ok:
         log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="senha incorreta")
         return jsonify({"erro": _MSG_CREDENCIAIS}), 401
+
+    if rehash_necessario:
+        _atualizar_senha_hash(usuario["id"], hash_senha(dados["senha"]))
 
     subject = usuario["email"]
     role = usuario.get("role", "user")
@@ -205,6 +221,25 @@ def _buscar_usuario_por_email(email: str):
             conn.close()
     except Exception:
         return None
+
+
+def _atualizar_senha_hash(usuario_id: int, novo_hash: str) -> None:
+    """Substitui o hash da senha por um novo (migração ou rehash por parâmetros desatualizados)."""
+    try:
+        import mysql.connector
+        from api.config_db import DB_CONFIG_ADMIN
+        conn = mysql.connector.connect(**DB_CONFIG_ADMIN)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE usuarios_app SET senha_hash = %s WHERE id = %s",
+                (novo_hash, usuario_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 def _atualizar_ultimo_acesso(usuario_id: int) -> None:
