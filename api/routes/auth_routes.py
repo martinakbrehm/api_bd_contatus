@@ -15,8 +15,9 @@ from flask import Blueprint, g, jsonify, request
 from api.auth.api_keys import validar_api_key
 from api.auth.decorators import _get_client_ip, require_auth
 from api.auth.jwt_handler import criar_access_token, criar_refresh_token, revogar_token, validar_token
-from api.models.schemas import ValidationError, validar_login
+from api.models.schemas import ValidationError, validar_login, validar_login_usuario
 from api.utils.audit_logger import log_request, log_security_event
+from api.utils.crypto import verificar_senha
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
 
@@ -86,6 +87,143 @@ def login():
         "expires_in": JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         "role": role,
     }), 200
+
+
+@auth_bp.route("/login_usuario", methods=["POST"])
+def login_usuario():
+    """
+    Autenticação via email + senha (tabela usuarios_app) → retorna access + refresh tokens.
+
+    Body (JSON):
+      { "email": "teste@contatus.com", "senha": "teste" }
+
+    Resposta (200):
+      {
+        "access_token": "eyJ...",
+        "refresh_token": "eyJ...",
+        "token_type": "Bearer",
+        "expires_in": 1800,
+        "role": "admin"
+      }
+    """
+    client_ip = _get_client_ip()
+
+    try:
+        data = request.get_json(silent=True) or {}
+        dados = validar_login_usuario(data)
+    except ValidationError as e:
+        return jsonify({"erro": "Dados inválidos.", "detalhes": e.erros}), 400
+
+    usuario = _buscar_usuario_por_email(dados["email"])
+
+    # Resposta genérica para não revelar se o email existe
+    _MSG_CREDENCIAIS = "Credenciais inválidas."
+
+    if usuario is None:
+        log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="email não encontrado")
+        return jsonify({"erro": _MSG_CREDENCIAIS}), 401
+
+    if not usuario.get("ativo"):
+        log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="usuário inativo")
+        return jsonify({"erro": _MSG_CREDENCIAIS}), 401
+
+    expira_em = usuario.get("expira_em")
+    if expira_em:
+        from datetime import datetime, timezone
+        try:
+            if isinstance(expira_em, str):
+                from datetime import datetime as _dt
+                exp = _dt.fromisoformat(expira_em)
+            else:
+                exp = expira_em  # já é datetime (vindo do mysql-connector)
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > exp:
+                log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="conta expirada")
+                return jsonify({"erro": _MSG_CREDENCIAIS}), 401
+        except (ValueError, TypeError):
+            pass
+
+    senha_hash = usuario.get("senha_hash", "")
+    try:
+        hash_hex, salt_hex = senha_hash.split("$", 1)
+    except ValueError:
+        log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="formato de hash inválido")
+        return jsonify({"erro": _MSG_CREDENCIAIS}), 401
+
+    if not verificar_senha(dados["senha"], hash_hex, salt_hex):
+        log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="senha incorreta")
+        return jsonify({"erro": _MSG_CREDENCIAIS}), 401
+
+    subject = usuario["email"]
+    role = usuario.get("role", "user")
+
+    access_token = criar_access_token(
+        subject=subject,
+        role=role,
+        ip_address=client_ip,
+        extra_claims={"nome": usuario.get("nome", "")},
+    )
+    refresh_token = criar_refresh_token(subject=subject, role=role)
+
+    _atualizar_ultimo_acesso(usuario["id"])
+
+    log_security_event(
+        "LOGIN_USUARIO_SUCCESS",
+        severity="INFO",
+        ip=client_ip,
+        subject=subject,
+        role=role,
+    )
+
+    from api.config import JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+    return jsonify({
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "Bearer",
+        "expires_in": JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "role": role,
+        "nome": usuario.get("nome", ""),
+    }), 200
+
+
+def _buscar_usuario_por_email(email: str):
+    """Busca um usuário ativo na tabela usuarios_app pelo email."""
+    try:
+        import mysql.connector
+        from api.config_db import DB_CONFIG
+        conn = mysql.connector.connect(**DB_CONFIG)
+        try:
+            cur = conn.cursor(dictionary=True)
+            cur.execute(
+                "SELECT id, nome, email, senha_hash, role, ativo, expira_em "
+                "FROM usuarios_app WHERE email = %s LIMIT 1",
+                (email,),
+            )
+            return cur.fetchone()
+        finally:
+            conn.close()
+    except Exception:
+        return None
+
+
+def _atualizar_ultimo_acesso(usuario_id: int) -> None:
+    """Atualiza o campo ultimo_acesso na tabela usuarios_app."""
+    try:
+        import mysql.connector
+        from api.config_db import DB_CONFIG
+        conn = mysql.connector.connect(**DB_CONFIG)
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE usuarios_app SET ultimo_acesso = NOW() WHERE id = %s",
+                (usuario_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 @auth_bp.route("/refresh", methods=["POST"])

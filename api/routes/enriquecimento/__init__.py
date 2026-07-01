@@ -32,6 +32,7 @@ from api.auth.decorators import _get_client_ip, require_auth, require_role
 from api.config_db import DB_CONFIG, DB_CONFIG_ADMIN
 from api.middleware.timeout_middleware import with_timeout
 from api.utils.audit_logger import log_data_access, log_security_event
+from api.utils.db_logger import extrair_campos_auth, registrar_log_consulta
 from api.utils.xlsx_exporter import gerar_excel_bytes
 
 enriquecimento_bp = Blueprint("enriquecimento", __name__, url_prefix="/api/v1")
@@ -253,11 +254,17 @@ def enriquecimento():
     client_ip = _get_client_ip()
     auth = g.auth_user
     request_id = getattr(g, "request_id", "")
+    key_id, nome_usuario = extrair_campos_auth(auth)
 
     arquivo = request.files.get("arquivo")
     tipo = request.form.get("tipo", "cpf").strip().lower()
 
     if arquivo is None:
+        registrar_log_consulta(
+            request_id=request_id, endpoint="enriquecimento",
+            key_id=key_id, nome_usuario=nome_usuario, role=auth.get("role"), ip=client_ip,
+            status_http=400, erro="Campo 'arquivo' ausente.",
+        )
         return jsonify({
             "ok": False,
             "erro": "Campo 'arquivo' é obrigatório (multipart/form-data).",
@@ -265,6 +272,11 @@ def enriquecimento():
         }), 400
 
     if tipo not in ("cpf", "telefone"):
+        registrar_log_consulta(
+            request_id=request_id, endpoint="enriquecimento",
+            key_id=key_id, nome_usuario=nome_usuario, role=auth.get("role"), ip=client_ip,
+            status_http=400, erro=f"Tipo inválido: {tipo!r}.",
+        )
         return jsonify({
             "ok": False,
             "erro": "Campo 'tipo' deve ser 'cpf' ou 'telefone'.",
@@ -349,6 +361,12 @@ def enriquecimento():
             error=str(e),
             ip=client_ip,
         )
+        registrar_log_consulta(
+            request_id=request_id, endpoint="enriquecimento",
+            key_id=key_id, nome_usuario=nome_usuario, role=auth.get("role"), ip=client_ip,
+            enriq_tipo=tipo, enriq_enviados=enviados,
+            status_http=500, erro=str(e),
+        )
         return jsonify({
             "ok": False,
             "erro": "Erro ao processar o enriquecimento.",
@@ -366,6 +384,13 @@ def enriquecimento():
         registros_retornados=encontrados,
         ip=client_ip,
         request_id=request_id,
+    )
+    registrar_log_consulta(
+        request_id=request_id, endpoint="enriquecimento",
+        key_id=key_id, nome_usuario=nome_usuario, role=auth.get("role"), ip=client_ip,
+        enriq_tipo=tipo, enriq_enviados=enviados, enriq_encontrados=encontrados,
+        quantidade_retornada=encontrados,
+        status_http=200 if encontrados > 0 else 404,
     )
 
     if encontrados == 0:

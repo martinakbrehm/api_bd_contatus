@@ -44,3 +44,28 @@ def validar_login(data: dict) -> dict:
         raise ValidationError(erros)
 
     return {"api_key": str(api_key).strip()}
+
+
+def validar_login_usuario(data: dict) -> dict:
+    """Valida dados de login por email e senha (usuarios_app)."""
+    erros = []
+
+    email = str(data.get("email", "")).strip().lower()
+    senha = str(data.get("senha", "")).strip()
+
+    if not email:
+        erros.append("'email' é obrigatório.")
+    elif len(email) > 150:
+        erros.append("'email' excede 150 caracteres.")
+    elif not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        erros.append("'email' inválido.")
+
+    if not senha:
+        erros.append("'senha' é obrigatória.")
+    elif len(senha) > 200:
+        erros.append("'senha' excede tamanho máximo.")
+
+    if erros:
+        raise ValidationError(erros)
+
+    return {"email": email, "senha": senha}
