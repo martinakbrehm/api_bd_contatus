@@ -362,7 +362,7 @@ def consultar():
 
     if not filtros.get("quantidade"):
         filtros["quantidade"] = MAX_REGISTROS_PADRAO
-    max_allowed = MAX_REGISTROS_POR_CONSULTA * (2 if auth.get("role") == "admin" else 1)
+    max_allowed = MAX_REGISTROS_POR_CONSULTA
     filtros["quantidade"] = min(filtros["quantidade"], max_allowed)
 
     filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, filtros["quantidade"])
@@ -459,7 +459,7 @@ def contagem():
 
     if not filtros.get("quantidade"):
         filtros["quantidade"] = MAX_REGISTROS_PADRAO
-    max_allowed = MAX_REGISTROS_POR_CONSULTA * (2 if auth.get("role") == "admin" else 1)
+    max_allowed = MAX_REGISTROS_POR_CONSULTA
     filtros["quantidade"] = min(filtros["quantidade"], max_allowed)
 
     filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, filtros["quantidade"])
@@ -705,7 +705,7 @@ def download():
 
     if not filtros.get("quantidade"):
         filtros["quantidade"] = MAX_REGISTROS_PADRAO
-    max_allowed = MAX_REGISTROS_POR_CONSULTA * (2 if auth.get("role") == "admin" else 1)
+    max_allowed = MAX_REGISTROS_POR_CONSULTA
     filtros["quantidade"] = min(filtros["quantidade"], max_allowed)
 
     filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, filtros["quantidade"])
@@ -855,7 +855,7 @@ def iniciar():
 
     if not filtros.get("quantidade"):
         filtros["quantidade"] = MAX_REGISTROS_PADRAO
-    max_allowed = MAX_REGISTROS_POR_CONSULTA * (2 if auth.get("role") == "admin" else 1)
+    max_allowed = MAX_REGISTROS_POR_CONSULTA
     filtros["quantidade"] = min(filtros["quantidade"], max_allowed)
 
     key_id, nome_usuario = extrair_campos_auth(auth)

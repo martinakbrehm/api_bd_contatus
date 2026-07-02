@@ -93,21 +93,19 @@ REQUEST_TIMEOUT_BY_ROLE = {
 }
 
 # Quantidade máxima de registros retornados por consulta
-MAX_REGISTROS_POR_CONSULTA = 50000
+MAX_REGISTROS_POR_CONSULTA = 999_999  # limite absoluto da API, para todos os roles
 MAX_REGISTROS_PADRAO = 1000
 
 # ── Consulta em Lotes ─────────────────────────────────────────
-# A consulta busca no banco em lotes (LIMIT/OFFSET), limpa cada lote
-# e acumula registros válidos até atingir a quantidade pedida.
+# A consulta busca no banco em lotes fixos (BATCH_SIZE_DB), aplica
+# limpeza Python em cada lote e acumula até atingir a quantidade pedida.
 #
-# BATCH_FATOR: multiplica a quantidade pedida para o tamanho do lote,
-#   compensando os registros descartados na limpeza.
-#   Ex: pedido=1000, fator=1.5 → lote=1500 do banco.
-#
-# BATCH_MAX_ITERACOES: número máximo de lotes por consulta, evita
-#   loop infinito em bases com alta taxa de descarte.
+# BATCH_MAX_ITERACOES: teto de segurança contra loop infinito.
+#   Com 5.000 linhas/lote e aproveitamento médio de ~80%, são necessárias
+#   ~250 iterações para entregar 999.999 registros limpos.
+#   Valor 300 garante margem mesmo com bases de baixo aproveitamento.
 BATCH_SIZE_DB = int(os.environ.get("API_BATCH_SIZE_DB", "5000"))    # linhas por query ao banco
-BATCH_MAX_ITERACOES = int(os.environ.get("API_BATCH_MAX_ITER", "20"))  # máx iterações (50k / 5k = 10 mín)
+BATCH_MAX_ITERACOES = int(os.environ.get("API_BATCH_MAX_ITER", "300"))  # máx iterações
 
 # ── Cache Redis ───────────────────────────────────────────────
 # REDIS_URL ex: redis://localhost:6379/0  ou  redis://:senha@host:6379/0
