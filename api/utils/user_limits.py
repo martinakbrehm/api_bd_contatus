@@ -1,14 +1,22 @@
 """
 api/utils/user_limits.py
 ------------------------
-Verificação de limites de uso por usuário (tabla usuarios_app).
+Verificação dos três limites de uso por usuário (tabla usuarios_app).
 
-Fluxo:
-  1. Busca limite_diario e limite_mensal em usuarios_app pelo email.
-  2. Soma quantidade_retornada em api_log_consultas (hoje / mês corrente).
-  3. Ajusta a quantidade solicitada ao saldo restante, ou rejeita se zerado.
+Limites aplicados em sequência:
 
-Só se aplica a usuários autenticados via login_usuario (subject = email).
+  1. limite_por_lista  — cap por requisição individual
+                         padrão: admin=1.000.000 / user=250.000
+                         override: usuarios_app.limite_por_lista
+
+  2. limite_diario     — teto acumulado no dia corrente
+                         NULL = sem limite diário
+
+  3. limite_mensal     — teto acumulado no mês corrente
+                         NULL = sem limite mensal
+
+Todos os limites são opcionais (NULL = sem restrição).
+Só se aplicam a usuários autenticados via login_usuario (subject = email).
 API Keys não têm linha em usuarios_app e não são afetadas.
 """
 
@@ -17,7 +25,6 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# Endpoints que contam contra o limite de registros do usuário
 _ENDPOINTS_CONTABILIZADOS = ("consulta", "contagem", "consulta_async")
 
 
@@ -27,22 +34,20 @@ def _conectar():
     return mysql.connector.connect(**DB_CONFIG)
 
 
-def _obter_limites(email: str) -> Optional[dict]:
+def _obter_limites_usuario(email: str) -> Optional[dict]:
     """
-    Retorna {'limite_diario': int|None, 'limite_mensal': int|None}
-    se o email existir em usuarios_app, ou None se não encontrado.
+    Retorna {'limite_por_lista', 'limite_diario', 'limite_mensal'} ou None.
     """
     try:
         conn = _conectar()
         try:
             cur = conn.cursor(dictionary=True)
             cur.execute(
-                "SELECT limite_diario, limite_mensal "
+                "SELECT limite_por_lista, limite_diario, limite_mensal "
                 "FROM usuarios_app WHERE email = %s AND ativo = 1 LIMIT 1",
                 (email,),
             )
-            row = cur.fetchone()
-            return row  # pode ser None se não encontrado
+            return cur.fetchone()
         finally:
             conn.close()
     except Exception as exc:
@@ -89,62 +94,69 @@ def _consumo_atual(email: str) -> dict:
 
 def verificar_e_ajustar_quantidade(
     nome_usuario: Optional[str],
+    role: Optional[str],
     quantidade_solicitada: int,
 ) -> tuple[int, Optional[str]]:
     """
-    Verifica limites do usuário e devolve a quantidade permitida.
-
-    Parâmetros
-    ----------
-    nome_usuario        : email do usuário (None = API Key, sem limites por usuário)
-    quantidade_solicitada : quantidade após o clamp de MAX_REGISTROS_POR_CONSULTA
+    Aplica os três limites em sequência e devolve a quantidade permitida.
 
     Retorna
     -------
     (quantidade_ajustada, erro)
-      - Se erro não for None, a requisição deve ser rejeitada com HTTP 429.
-      - Se quantidade_ajustada < quantidade_solicitada, foi cortada pelo saldo.
+      - erro não None  → requisição deve ser rejeitada com HTTP 429
+      - erro None      → quantidade_ajustada já está dentro dos limites
     """
-    if not nome_usuario or "@" not in nome_usuario:
-        # Não é um usuário de usuarios_app — sem limites individuais
-        return quantidade_solicitada, None
+    from api.config import MAX_REGISTROS_POR_ROLE
 
-    limites = _obter_limites(nome_usuario)
-    if limites is None:
-        # Email não encontrado em usuarios_app → sem limites
-        return quantidade_solicitada, None
+    # ── 1. Limite por lista ───────────────────────────────────────────────────
+    # Padrão do role, override possível por usuario
+    limite_por_lista = MAX_REGISTROS_POR_ROLE.get(role or "", 0) or None
 
-    limite_diario  = limites.get("limite_diario")
-    limite_mensal  = limites.get("limite_mensal")
+    # Apenas usuarios_app têm override individual (subject = email)
+    eh_usuario_app = bool(nome_usuario and "@" in nome_usuario)
+
+    limites_db = None
+    if eh_usuario_app:
+        limites_db = _obter_limites_usuario(nome_usuario)
+        if limites_db and limites_db.get("limite_por_lista") is not None:
+            limite_por_lista = int(limites_db["limite_por_lista"])
+
+    quantidade = quantidade_solicitada
+    if limite_por_lista is not None:
+        quantidade = min(quantidade, limite_por_lista)
+
+    # ── 2 & 3. Limites diário e mensal (acumulados) ──────────────────────────
+    if not eh_usuario_app or limites_db is None:
+        return quantidade, None
+
+    limite_diario = limites_db.get("limite_diario")
+    limite_mensal = limites_db.get("limite_mensal")
 
     if limite_diario is None and limite_mensal is None:
-        # Usuário sem limites configurados
-        return quantidade_solicitada, None
+        return quantidade, None
 
     consumo = _consumo_atual(nome_usuario)
     consumido_hoje = consumo["consumido_hoje"]
     consumido_mes  = consumo["consumido_mes"]
 
-    saldo_diario  = (limite_diario  - consumido_hoje) if limite_diario  is not None else None
-    saldo_mensal  = (limite_mensal  - consumido_mes)  if limite_mensal  is not None else None
+    if limite_diario is not None:
+        saldo_diario = limite_diario - consumido_hoje
+        if saldo_diario <= 0:
+            return 0, (
+                f"Limite diário atingido. "
+                f"Você já consultou {consumido_hoje:,} registro(s) hoje "
+                f"(limite: {limite_diario:,})."
+            )
+        quantidade = min(quantidade, saldo_diario)
 
-    # Verificar limites esgotados
-    if saldo_diario is not None and saldo_diario <= 0:
-        return 0, (
-            f"Limite diário atingido. "
-            f"Você já consultou {consumido_hoje:,} registro(s) hoje "
-            f"(limite: {limite_diario:,})."
-        )
+    if limite_mensal is not None:
+        saldo_mensal = limite_mensal - consumido_mes
+        if saldo_mensal <= 0:
+            return 0, (
+                f"Limite mensal atingido. "
+                f"Você já consultou {consumido_mes:,} registro(s) neste mês "
+                f"(limite: {limite_mensal:,})."
+            )
+        quantidade = min(quantidade, saldo_mensal)
 
-    if saldo_mensal is not None and saldo_mensal <= 0:
-        return 0, (
-            f"Limite mensal atingido. "
-            f"Você já consultou {consumido_mes:,} registro(s) neste mês "
-            f"(limite: {limite_mensal:,})."
-        )
-
-    # Calcular a menor permissão entre os saldos disponíveis
-    saldos_ativos = [s for s in (saldo_diario, saldo_mensal) if s is not None]
-    quantidade_permitida = min(quantidade_solicitada, *saldos_ativos)
-
-    return quantidade_permitida, None
+    return quantidade, None

@@ -8,6 +8,7 @@ CREATE TABLE usuarios_app (
     role              ENUM('admin','user','readonly') NOT NULL DEFAULT 'user',
     ativo             TINYINT(1)         NOT NULL DEFAULT 1,
 
+    limite_por_lista  INT UNSIGNED       NULL,
     limite_diario     INT UNSIGNED       NULL,
     limite_mensal     INT UNSIGNED       NULL,
 

@@ -85,15 +85,23 @@ MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB máximo por request
 # Timeout padrão de requisição (segundos) — usado quando o role não é reconhecido
 REQUEST_TIMEOUT = int(os.environ.get("API_REQUEST_TIMEOUT", "60"))
 
-# Timeout por role (segundos) — roles com mais permissões recebem mais tempo
+# Timeout por role (segundos)
+# Dimensionado para comportar as listas máximas:
+#   admin 1M registros  @ ~5k/lote ≈ 200 lotes × ~4s = ~800s → 1800s com margem
+#   user  250k registros @ ~5k/lote ≈  50 lotes × ~4s = ~200s →  600s com margem
 REQUEST_TIMEOUT_BY_ROLE = {
-    "admin":    int(os.environ.get("API_REQUEST_TIMEOUT_ADMIN",    "180")),  # queries pesadas
-    "user":     int(os.environ.get("API_REQUEST_TIMEOUT_USER",      "90")),  # padrão
-    "readonly": int(os.environ.get("API_REQUEST_TIMEOUT_READONLY",  "30")),  # contagem/preview
+    "admin":    int(os.environ.get("API_REQUEST_TIMEOUT_ADMIN",    "1800")),
+    "user":     int(os.environ.get("API_REQUEST_TIMEOUT_USER",      "600")),
+    "readonly": int(os.environ.get("API_REQUEST_TIMEOUT_READONLY",   "30")),
 }
 
-# Quantidade máxima de registros retornados por consulta
-MAX_REGISTROS_POR_CONSULTA = 999_999  # limite absoluto da API, para todos os roles
+# Limite de registros por lista, por role (padrão — pode ser sobrescrito por usuário em usuarios_app)
+MAX_REGISTROS_POR_ROLE = {
+    "admin":    int(os.environ.get("API_MAX_REGISTROS_ADMIN",    "1000000")),
+    "user":     int(os.environ.get("API_MAX_REGISTROS_USER",      "250000")),
+    "readonly": int(os.environ.get("API_MAX_REGISTROS_READONLY",       "0")),
+}
+MAX_REGISTROS_POR_CONSULTA = 999_999  # teto absoluto da API (schema)
 MAX_REGISTROS_PADRAO = 1000
 
 # ── Consulta em Lotes ─────────────────────────────────────────

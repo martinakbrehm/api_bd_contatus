@@ -365,7 +365,7 @@ def consultar():
     max_allowed = MAX_REGISTROS_POR_CONSULTA
     filtros["quantidade"] = min(filtros["quantidade"], max_allowed)
 
-    filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, filtros["quantidade"])
+    filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, auth.get("role"), filtros["quantidade"])
     if limite_erro:
         registrar_log_consulta(
             request_id=request_id, endpoint="consulta",
@@ -462,7 +462,7 @@ def contagem():
     max_allowed = MAX_REGISTROS_POR_CONSULTA
     filtros["quantidade"] = min(filtros["quantidade"], max_allowed)
 
-    filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, filtros["quantidade"])
+    filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, auth.get("role"), filtros["quantidade"])
     if limite_erro:
         registrar_log_consulta(
             request_id=request_id, endpoint="contagem",
@@ -708,7 +708,7 @@ def download():
     max_allowed = MAX_REGISTROS_POR_CONSULTA
     filtros["quantidade"] = min(filtros["quantidade"], max_allowed)
 
-    filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, filtros["quantidade"])
+    filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, auth.get("role"), filtros["quantidade"])
     if limite_erro:
         registrar_log_consulta(
             request_id=request_id, endpoint="consulta",
@@ -860,7 +860,7 @@ def iniciar():
 
     key_id, nome_usuario = extrair_campos_auth(auth)
 
-    filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, filtros["quantidade"])
+    filtros["quantidade"], limite_erro = verificar_e_ajustar_quantidade(nome_usuario, auth.get("role"), filtros["quantidade"])
     if limite_erro:
         return jsonify({"ok": False, "erro": limite_erro, "request_id": request_id}), 429
 
