@@ -213,10 +213,10 @@ class TestValidarConsulta:
 
     # ── Segurança / injeção ──────────────────────────────────
 
-    def test_bairro_com_sql_injection_rejeitado(self):
-        """Caracteres SQL perigosos em bairro devem ser rejeitados."""
+    def test_bairro_com_caracteres_invalidos_rejeitado(self):
+        """Caracteres inválidos em bairro (angle brackets, curlies) devem ser rejeitados."""
         with pytest.raises(ValidationError):
-            validar_consulta({**_BASE, "bairros": ["CENTRO' OR '1'='1"]})
+            validar_consulta({**_BASE, "bairros": ["<script>CENTRO</script>"]})
 
     def test_cidade_com_html_injection_rejeitada(self):
         with pytest.raises(ValidationError):

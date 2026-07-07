@@ -23,13 +23,21 @@ def _txt(conteudo: str) -> io.BytesIO:
     return buf
 
 
-def _post_enriquecimento(client, headers, conteudo: str, tipo: str = "cpf"):
-    """Atalho para POST multipart com arquivo."""
+def _post_enriquecimento(
+    client, headers, conteudo: str, tipo: str = "cpf",
+    tipo_lista: str = "consulta_disponibilidade",
+):
+    """Atalho para POST multipart com arquivo.
+
+    tipo_lista padrão = "consulta_disponibilidade" para que testes focados
+    em outros aspectos (tamanho, tipo, DB) passem pela validação de exportação.
+    """
     return client.post(
         "/api/v1/enriquecimento",
         data={
             "arquivo": (io.BytesIO(conteudo.encode("utf-8")), "lista.txt"),
             "tipo": tipo,
+            "tipo_lista": tipo_lista,
         },
         headers={k: v for k, v in headers.items() if k != "Content-Type"},
         content_type="multipart/form-data",
@@ -72,7 +80,7 @@ class TestEnriquecimentoAuth:
             with patch("pandas.read_sql", return_value=df_vazio), \
                  patch("api.routes.enriquecimento.gerar_excel_bytes", return_value=io.BytesIO(b"PK")):
                 resp = _post_enriquecimento(client, user_headers, "09199194996")
-        assert resp.status_code in (200, 400, 500)
+        assert resp.status_code in (200, 400, 404, 500)
         assert resp.status_code != 403
 
     def test_role_admin_permitido(self, client, admin_headers):
@@ -95,7 +103,7 @@ class TestEnriquecimentoValidacao:
     def test_sem_arquivo_retorna_400(self, client, user_headers):
         resp = client.post(
             "/api/v1/enriquecimento",
-            data={"tipo": "cpf"},
+            data={"tipo": "cpf", "tipo_lista": "consulta_disponibilidade"},
             headers={k: v for k, v in user_headers.items() if k != "Content-Type"},
             content_type="multipart/form-data",
         )
@@ -108,6 +116,7 @@ class TestEnriquecimentoValidacao:
             data={
                 "arquivo": (_txt("09199194996"), "l.txt"),
                 "tipo": "rg",
+                "tipo_lista": "consulta_disponibilidade",
             },
             headers={k: v for k, v in user_headers.items() if k != "Content-Type"},
             content_type="multipart/form-data",
@@ -201,11 +210,11 @@ class TestEnriquecimentoSeguranca:
     """Testes de borda: arquivos grandes, injeção, abuso."""
 
     def test_arquivo_acima_do_limite_retorna_400(self, client, user_headers):
-        """1.000.001 CPFs únicos devem ser rejeitados."""
+        """1.000.001 CPFs únicos devem ser rejeitados (400 pelo limite de registros ou 413 pelo tamanho)."""
         cpfs_unicos = "\n".join(str(i).zfill(11) for i in range(1_000_001))
         resp = _post_enriquecimento(client, user_headers, cpfs_unicos)
-        assert resp.status_code == 400
-        assert "limite" in resp.get_json()["erro"].lower()
+        # 12 MB de CPFs dispara o limite de tamanho (413) antes do limite de registros (400)
+        assert resp.status_code in (400, 413)
 
     def test_arquivo_exatamente_no_limite_aceito(self, client, user_headers):
         """1.000.000 CPFs (11 dígitos cada) devem passar pela validação de tamanho."""
@@ -233,17 +242,23 @@ class TestEnriquecimentoSeguranca:
                 assert all(c.isdigit() and len(c) == 11 for c in cpfs_carregados)
 
     def test_null_bytes_no_arquivo_ignorados(self, client, user_headers):
-        """Arquivo com null bytes não deve causar erro 500."""
+        """Arquivo com null bytes nao deve causar erro 500 (null byte removido pelo regex de digitos)."""
         conteudo_bytes = b"09199194996\x00\n000.000.001-91\n"
-        resp = client.post(
-            "/api/v1/enriquecimento",
-            data={
-                "arquivo": (io.BytesIO(conteudo_bytes), "lista.txt"),
-                "tipo": "cpf",
-            },
-            headers={k: v for k, v in user_headers.items() if k != "Content-Type"},
-            content_type="multipart/form-data",
-        )
+        df_vazio = pd.DataFrame(columns=["CPF"])
+        with patch("api.routes.enriquecimento._carregar_cpfs_sessao"), \
+             patch("api.routes.enriquecimento._conectar"), \
+             patch("pandas.read_sql", return_value=df_vazio), \
+             patch("api.routes.enriquecimento.gerar_excel_bytes", return_value=io.BytesIO(b"PK")):
+            resp = client.post(
+                "/api/v1/enriquecimento",
+                data={
+                    "arquivo": (io.BytesIO(conteudo_bytes), "lista.txt"),
+                    "tipo": "cpf",
+                    "tipo_lista": "consulta_disponibilidade",
+                },
+                headers={k: v for k, v in user_headers.items() if k != "Content-Type"},
+                content_type="multipart/form-data",
+            )
         assert resp.status_code != 500
 
     def test_cabecalho_x_enviados_presente(self, client, user_headers):

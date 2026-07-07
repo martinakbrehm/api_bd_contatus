@@ -123,10 +123,10 @@ class TestTemTelefonDoTipo:
 def _df_base(rows: list[dict]) -> pd.DataFrame:
     """DataFrame mínimo compatível com processar()."""
     template = {
-        "CPF": None, "NOME": "TESTE", "GENERO": "M",
-        "DATA_NASCIMENTO": "1985-01-01", "ENDERECO": "RUA X",
-        "NUM_END": "1", "COMPLEMENTO": None, "BAIRRO": "CENTRO",
-        "CIDADE": "SAO PAULO", "UF": "SP", "CEP": "01000000",
+        "CPF": None, "NOME": "MARIA SILVA", "GENERO": "F",
+        "DATA_NASCIMENTO": "1985-01-01", "ENDERECO": "RUA DAS FLORES",
+        "NUM_END": "123", "COMPLEMENTO": None, "BAIRRO": "CENTRO",
+        "CIDADE": "SAO PAULO", "UF": "SP", "CEP": "01310100",
         "EMAIL_1": None, "EMAIL_2": None,
         "TELEFONE_1": None, "TELEFONE_2": None, "TELEFONE_3": None,
         "TELEFONE_4": None, "TELEFONE_5": None, "TELEFONE_6": None,
@@ -140,40 +140,40 @@ class TestProcessarTipoTelefone:
     def test_ambos_remove_registros_sem_telefone(self):
         from api.utils.data_processor import processar
         df = _df_base([
-            {"CPF": "11111111111", "TELEFONE_1": "11987654321"},
-            {"CPF": "22222222222", "TELEFONE_1": None},
-            {"CPF": "33333333333", "TELEFONE_1": "1131234567"},
+            {"CPF": "45678901234", "TELEFONE_1": "11987654321"},  # celular
+            {"CPF": "56789012345", "TELEFONE_1": None},            # sem telefone
+            {"CPF": "67890123456", "TELEFONE_1": "1131234567"},   # fixo
         ])
         resultado, _ = processar(df, {"tipo_telefone": "ambos"})
         cpfs = set(resultado["CPF"].tolist())
-        assert "22222222222" not in cpfs
-        assert "11111111111" in cpfs or "33333333333" in cpfs
+        assert "56789012345" not in cpfs
+        assert "45678901234" in cpfs or "67890123456" in cpfs
 
     def test_movel_retorna_so_celulares(self):
         from api.utils.data_processor import processar
         df = _df_base([
-            {"CPF": "11111111111", "TELEFONE_1": "11987654321"},
-            {"CPF": "22222222222", "TELEFONE_1": "1131234567"},
+            {"CPF": "45678901234", "TELEFONE_1": "11987654321"},  # celular
+            {"CPF": "56789012345", "TELEFONE_1": "1131234567"},   # fixo
         ])
         resultado, _ = processar(df, {"tipo_telefone": "movel"})
         assert len(resultado) == 1
-        assert resultado.iloc[0]["CPF"] == "11111111111"
+        assert resultado.iloc[0]["CPF"] == "45678901234"
 
     def test_fixo_retorna_so_fixos(self):
         from api.utils.data_processor import processar
         df = _df_base([
-            {"CPF": "11111111111", "TELEFONE_1": "11987654321"},
-            {"CPF": "22222222222", "TELEFONE_1": "1131234567"},
+            {"CPF": "45678901234", "TELEFONE_1": "11987654321"},  # celular
+            {"CPF": "56789012345", "TELEFONE_1": "1131234567"},   # fixo
         ])
         resultado, _ = processar(df, {"tipo_telefone": "fixo"})
         assert len(resultado) == 1
-        assert resultado.iloc[0]["CPF"] == "22222222222"
+        assert resultado.iloc[0]["CPF"] == "56789012345"
 
     def test_ambos_aceita_mix_celular_e_fixo(self):
         from api.utils.data_processor import processar
         df = _df_base([
-            {"CPF": "11111111111", "TELEFONE_1": "11987654321"},
-            {"CPF": "22222222222", "TELEFONE_1": "1131234567"},
+            {"CPF": "45678901234", "TELEFONE_1": "11987654321"},
+            {"CPF": "56789012345", "TELEFONE_1": "1131234567"},
         ])
         resultado, _ = processar(df, {"tipo_telefone": "ambos"})
         assert len(resultado) == 2
@@ -185,7 +185,8 @@ class TestProcessarTipoTelefone:
 
     def test_quantidade_limita_resultado(self):
         from api.utils.data_processor import processar
-        rows = [{"CPF": str(i).zfill(11), "TELEFONE_1": "11987654321"} for i in range(10)]
+        # Começa em 1 para evitar "00000000000" (todos zeros — inválido)
+        rows = [{"CPF": str(i).zfill(11), "TELEFONE_1": "11987654321"} for i in range(1, 11)]
         df = _df_base(rows)
         resultado, _ = processar(df, {"tipo_telefone": "movel", "quantidade": 3})
         assert len(resultado) <= 3
@@ -197,12 +198,12 @@ class TestProcessarDeduplicacao:
     def test_cpf_duplicado_mantém_primeiro(self):
         from api.utils.data_processor import processar
         df = _df_base([
-            {"CPF": "11111111111", "TELEFONE_1": "11987654321", "NOME": "PRIMEIRO"},
-            {"CPF": "11111111111", "TELEFONE_1": "11987654322", "NOME": "SEGUNDO"},
+            {"CPF": "45678901234", "TELEFONE_1": "11987654321", "NOME": "JOAO SILVA"},
+            {"CPF": "45678901234", "TELEFONE_1": "11987654322", "NOME": "JOAO SILVA DUPLICADO"},
         ])
         resultado, _ = processar(df, {"tipo_telefone": "movel"})
         assert len(resultado) == 1
-        assert resultado.iloc[0]["NOME"] == "PRIMEIRO"
+        assert resultado.iloc[0]["NOME"] == "JOAO SILVA"
 
     def test_sem_cpf_nao_é_deduplicado(self):
         from api.utils.data_processor import processar

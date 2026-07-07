@@ -109,34 +109,31 @@ class TestFluxoCompletoConsulta:
             assert resp.status_code == 200
             data = resp.get_json()
             assert data["ok"] is True
-            assert data["total_banco"] == 10
+            assert data["total_bruto_buscado"] == 10
             assert len(data["registros"]) <= 5
             assert "colunas" in data
             assert "tempo_processamento_s" in data
 
-    def test_contagem_retorna_total_sem_dados(self, client, user_headers):
-        with patch("api.routes.consulta._conectar_banco") as mock_conn:
-            mock_cursor = MagicMock()
-            mock_cursor.fetchone.return_value = {"total": 9999}
-            mock_conn.return_value.cursor.return_value = mock_cursor
-
+    def test_contagem_retorna_total_sem_dados(self, client, user_headers, tmp_path):
+        with patch("api.routes.consulta._executar_query", return_value=self._mock_df(3)), \
+             patch("api.routes.consulta._DIR_TEMP", tmp_path):
             resp = client.post(
                 "/api/v1/consulta/contagem",
-                json={"ufs": ["RJ"], "genero": "F", "idade_min": 30, "idade_max": 50},
+                json={"ufs": ["RJ"], "cidades": ["NITEROI"], "genero": "F", "idade_min": 30, "idade_max": 50},
                 headers=user_headers,
             )
             assert resp.status_code == 200
             data = resp.get_json()
             assert data["ok"] is True
-            assert data["total_banco"] == 9999
-            # Contagem NÃO deve retornar registros
+            assert "total_disponivel" in data
+            # Contagem NÃO deve retornar registros diretamente
             assert "registros" not in data
 
     def test_preview_mascara_dados(self, client, readonly_headers):
         with patch("api.routes.consulta._executar_query", return_value=self._mock_df(3)):
             resp = client.post(
                 "/api/v1/consulta/preview",
-                json={"ufs": ["SP"]},
+                json={"ufs": ["SP"], "cidades": ["SAO PAULO"]},
                 headers=readonly_headers,
             )
             assert resp.status_code == 200
@@ -250,14 +247,17 @@ class TestSegurancaCamadas:
         """API Key via header X-API-Key deve funcionar sem JWT."""
         api_key, _ = user_api_key
 
-        with patch("api.routes.consulta._conectar_banco") as mock_conn:
-            mock_cursor = MagicMock()
-            mock_cursor.fetchone.return_value = {"total": 100}
-            mock_conn.return_value.cursor.return_value = mock_cursor
-
+        _df = pd.DataFrame([{"NOME": "X", "CPF": "12345678901", "TELEFONE_1": "11987654321",
+                             "TELEFONE_2": None, "TELEFONE_3": None, "TELEFONE_4": None,
+                             "TELEFONE_5": None, "TELEFONE_6": None, "GENERO": "M",
+                             "DATA_NASCIMENTO": "1990-01-01", "ENDERECO": "RUA A", "NUM_END": "1",
+                             "COMPLEMENTO": None, "BAIRRO": "CENTRO", "CIDADE": "SAO PAULO",
+                             "UF": "SP", "CEP": "01000000", "EMAIL_1": None, "EMAIL_2": None}])
+        with patch("api.routes.consulta._executar_query", return_value=_df), \
+             patch("api.routes.consulta._DIR_TEMP", __import__("pathlib").Path(__import__("tempfile").mkdtemp())):
             resp = client.post(
                 "/api/v1/consulta/contagem",
-                json={"ufs": ["SP"]},
+                json={"ufs": ["SP"], "cidades": ["SAO PAULO"]},
                 headers={
                     "X-API-Key": api_key,
                     "Content-Type": "application/json",

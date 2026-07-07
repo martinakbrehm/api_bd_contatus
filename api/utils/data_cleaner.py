@@ -145,9 +145,10 @@ def _validar_cpf(cpf) -> bool:
     - Não é sequência repetida (00000000000, 11111111111, ...)
     - Não é CPF de teste conhecido (12345678901, etc.)
     - Não contém letras ou caracteres inválidos
+    CPF ausente (None/NaN) é aceito — o registro tem outros dados úteis.
     """
     if pd.isna(cpf) or cpf is None:
-        return False
+        return True   # ausente ≠ inválido; deduplicação trata separadamente
     s = str(cpf).strip()
 
     # CPF não pode conter letras

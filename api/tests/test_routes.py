@@ -222,20 +222,14 @@ class TestConsultaAutorizacao:
         )
         assert resp.status_code == 403
 
-    def test_contagem_readonly_permitido(self, client, readonly_headers):
-        """Contagem deve ser acessível por readonly (não retorna dados pessoais)."""
-        with patch("api.routes.consulta._conectar_banco") as mock_conn:
-            mock_cursor = MagicMock()
-            mock_cursor.fetchone.return_value = {"total": 42}
-            mock_conn.return_value.cursor.return_value = mock_cursor
-
-            resp = client.post(
-                "/api/v1/consulta/contagem",
-                json={"ufs": ["SP"], "cidades": ["SAO PAULO"]},
-                headers=readonly_headers,
-            )
-            assert resp.status_code == 200
-            assert resp.get_json()["total_banco"] == 42
+    def test_contagem_readonly_proibido(self, client, readonly_headers):
+        """Contagem gera token de download — readonly não tem acesso (403)."""
+        resp = client.post(
+            "/api/v1/consulta/contagem",
+            json={"ufs": ["SP"], "cidades": ["SAO PAULO"]},
+            headers=readonly_headers,
+        )
+        assert resp.status_code == 403
 
     def test_preview_readonly_permitido(self, client, readonly_headers):
         """Preview deve ser acessível (dados mascarados)."""
@@ -327,15 +321,18 @@ class TestConsultaValidacao:
             assert resp.status_code == 200
             data = resp.get_json()
             assert data["ok"] is True
-            assert data["total_banco"] == 0
+            assert data["total_bruto_buscado"] == 0
             assert data["registros"] == []
 
-    def test_contagem_com_mock(self, client, admin_headers):
-        with patch("api.routes.consulta._conectar_banco") as mock_conn:
-            mock_cursor = MagicMock()
-            mock_cursor.fetchone.return_value = {"total": 12345}
-            mock_conn.return_value.cursor.return_value = mock_cursor
-
+    def test_contagem_com_mock(self, client, admin_headers, tmp_path):
+        _df = pd.DataFrame([{"NOME": "X", "CPF": "12345678901", "TELEFONE_1": "11987654321",
+                              "TELEFONE_2": None, "TELEFONE_3": None, "TELEFONE_4": None,
+                              "TELEFONE_5": None, "TELEFONE_6": None, "GENERO": "F",
+                              "DATA_NASCIMENTO": "1990-01-01", "ENDERECO": "RUA A", "NUM_END": "1",
+                              "COMPLEMENTO": None, "BAIRRO": "CENTRO", "CIDADE": "SAO PAULO",
+                              "UF": "SP", "CEP": "01000000", "EMAIL_1": None, "EMAIL_2": None}])
+        with patch("api.routes.consulta._executar_query", return_value=_df), \
+             patch("api.routes.consulta._DIR_TEMP", tmp_path):
             resp = client.post(
                 "/api/v1/consulta/contagem",
                 json={"ufs": ["SP", "RJ"], "cidades": ["SAO PAULO"], "genero": "F", "idade_min": 25, "idade_max": 50},
@@ -344,7 +341,7 @@ class TestConsultaValidacao:
             assert resp.status_code == 200
             data = resp.get_json()
             assert data["ok"] is True
-            assert data["total_banco"] == 12345
+            assert "total_disponivel" in data
             assert "descricao" in data
 
     def test_request_id_na_resposta(self, client, admin_headers):
