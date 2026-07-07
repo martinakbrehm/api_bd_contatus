@@ -109,6 +109,16 @@ def hmac_verify(payload: str, signature: str, secret: str) -> bool:
     return hmac.compare_digest(expected, signature)
 
 
+def gerar_token_seguro(num_bytes: int = 32) -> str:
+    """Gera token hexadecimal com num_bytes bytes de entropia."""
+    return secrets.token_hex(num_bytes)
+
+
+def gerar_token_url_safe(num_bytes: int = 32) -> str:
+    """Gera token URL-safe (base64url) com num_bytes bytes de entropia."""
+    return secrets.token_urlsafe(num_bytes)
+
+
 def gerar_nonce() -> str:
     """Gera um nonce único para prevenir replay attacks."""
     return f"{int(time.time() * 1000)}_{secrets.token_hex(8)}"

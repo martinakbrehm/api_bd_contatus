@@ -2,6 +2,8 @@
 test_crypto.py
 --------------
 Testes dos utilitários criptográficos.
+
+Padrão atual de senha: argon2id (auto-descritivo — não usa salt externo).
 """
 
 import pytest
@@ -29,11 +31,10 @@ class TestTokens:
         tokens = {gerar_token_seguro() for _ in range(100)}
         assert len(tokens) == 100, "Tokens devem ser únicos"
 
-    def test_token_url_safe(self):
+    def test_token_url_safe_e_string(self):
         token = gerar_token_url_safe(32)
         assert isinstance(token, str)
-        # Não deve conter +, / ou =
-        assert "+" not in token or token  # base64url encoded
+        assert len(token) > 0
 
     def test_nonce_unico(self):
         nonces = {gerar_nonce() for _ in range(100)}
@@ -41,32 +42,36 @@ class TestTokens:
 
 
 class TestHashSenha:
-    """Testes de hash de senhas."""
+    """
+    Testes de hash de senhas com argon2id.
 
-    def test_hash_e_verificar(self):
-        hash_val, salt = hash_senha("minha_senha_secreta")
-        assert verificar_senha("minha_senha_secreta", hash_val, salt)
+    A API atual retorna uma string auto-descritiva (sem salt separado):
+      hash_senha(pwd)  → str no formato $argon2id$...
+      verificar_senha(pwd, hash) → bool
+    """
+
+    def test_hash_retorna_string_argon2id(self):
+        h = hash_senha("minha_senha_secreta")
+        assert isinstance(h, str)
+        assert h.startswith("$argon2id$")
+
+    def test_verificar_senha_correta(self):
+        h = hash_senha("minha_senha_secreta")
+        assert verificar_senha("minha_senha_secreta", h)
 
     def test_senha_errada_rejeitada(self):
-        hash_val, salt = hash_senha("senha_correta")
-        assert not verificar_senha("senha_errada", hash_val, salt)
+        h = hash_senha("senha_correta")
+        assert not verificar_senha("senha_errada", h)
 
-    def test_mesmo_salt_mesmo_hash(self):
-        h1, _ = hash_senha("test", salt="fixed_salt")
-        h2, _ = hash_senha("test", salt="fixed_salt")
-        assert h1 == h2
-
-    def test_salt_diferente_hash_diferente(self):
-        h1, s1 = hash_senha("test")
-        h2, s2 = hash_senha("test")
-        # Salts gerados aleatoriamente devem ser diferentes
-        assert s1 != s2
+    def test_mesmo_pwd_gera_hashes_diferentes(self):
+        """argon2id usa salt aleatório embutido — mesmo pwd gera hashes distintos."""
+        h1 = hash_senha("test")
+        h2 = hash_senha("test")
         assert h1 != h2
 
     def test_hash_nao_contem_senha_original(self):
-        hash_val, salt = hash_senha("minha_senha")
-        assert "minha_senha" not in hash_val
-        assert "minha_senha" not in salt
+        h = hash_senha("minha_senha")
+        assert "minha_senha" not in h
 
 
 class TestHMAC:

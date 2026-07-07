@@ -15,6 +15,8 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,6 +25,31 @@ import pytest
 # Garantir imports do projeto
 _ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_ROOT))
+
+
+# ── Proteção contra threads zumbis ───────────────────────────
+
+@pytest.fixture(autouse=True)
+def _sem_threads_zumbis():
+    """
+    Garante que cada teste não deixa threads não-daemon ativas.
+    Threads daemon são ignoradas (morrem com o processo).
+    Aguarda até 1 segundo para threads pendentes terminarem antes de falhar.
+    """
+    antes = {t.ident for t in threading.enumerate() if t.is_alive() and not t.daemon}
+    yield
+    prazo = time.time() + 1.0
+    while time.time() < prazo:
+        zumbis = [
+            t for t in threading.enumerate()
+            if t.is_alive() and not t.daemon and t.ident not in antes
+        ]
+        if not zumbis:
+            break
+        time.sleep(0.05)
+    assert not zumbis, (
+        f"Thread(s) não-daemon deixadas pelo teste: {[t.name for t in zumbis]}"
+    )
 
 
 # ── Fixtures de configuração ─────────────────────────────────
