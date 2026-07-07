@@ -106,7 +106,11 @@ def criar_access_token(
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
-def criar_refresh_token(subject: str, role: str = "user") -> str:
+def criar_refresh_token(
+    subject: str,
+    role: str = "user",
+    extra_claims: Optional[dict] = None,
+) -> str:
     """
     Cria um refresh token JWT de longa duração.
     Usado apenas para renovar o access token.
@@ -123,6 +127,13 @@ def criar_refresh_token(subject: str, role: str = "user") -> str:
         "exp": now + timedelta(minutes=JWT_REFRESH_TOKEN_EXPIRE_MINUTES),
         "nbf": now,
     }
+
+    if extra_claims:
+        safe_claims = {
+            k: v for k, v in extra_claims.items()
+            if k not in ("sub", "role", "type", "jti", "iat", "exp", "nbf")
+        }
+        payload.update(safe_claims)
 
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 

@@ -33,6 +33,8 @@ import re
 
 # ── Conjuntos de valores válidos ─────────────────────────────────────────────
 
+TIPO_LISTA_OPCOES = {"venda", "teste", "consulta_disponibilidade"}
+
 UFS_VALIDAS = {
     "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA",
     "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN",
@@ -323,3 +325,100 @@ def validar_consulta(data: dict) -> dict:
 def validar_contagem(data: dict) -> dict:
     """Valida dados para endpoint de contagem. Reutiliza validar_consulta."""
     return validar_consulta(data)
+
+
+def validar_exportacao(data: dict) -> dict:
+    """
+    Valida os metadados obrigatórios antes de servir um XLSX.
+
+    Campos obrigatórios para todos os tipos:
+      tipo_lista  "venda" | "consulta_geral" | "teste"
+
+    Campos obrigatórios apenas quando tipo_lista == "venda":
+      nome_cliente  str (máx 150 chars)
+      valor_lista   número >= 0
+      parcelado     bool
+      num_parcelas  int >= 2  (obrigatório se parcelado=true)
+      valor_parcela número >= 0  (opcional mesmo se parcelado=true)
+
+    Raises ValidationError com lista de erros se dados inválidos/ausentes.
+    """
+    erros = []
+    resultado = {}
+
+    tipo_lista = str(data.get("tipo_lista", "")).strip().lower()
+    if tipo_lista not in TIPO_LISTA_OPCOES:
+        erros.append(
+            f"'tipo_lista' é obrigatório. Use: {', '.join(sorted(TIPO_LISTA_OPCOES))}"
+        )
+    resultado["tipo_lista"] = tipo_lista if tipo_lista in TIPO_LISTA_OPCOES else None
+
+    if tipo_lista == "venda":
+        nome_cliente = str(data.get("nome_cliente", "")).strip()
+        if not nome_cliente:
+            erros.append("'nome_cliente' é obrigatório para listas de venda.")
+        elif len(nome_cliente) > 150:
+            erros.append("'nome_cliente' deve ter no máximo 150 caracteres.")
+        resultado["nome_cliente"] = nome_cliente or None
+
+        valor_lista = data.get("valor_lista")
+        if valor_lista is None:
+            erros.append("'valor_lista' é obrigatório para listas de venda.")
+            resultado["valor_lista"] = None
+        else:
+            try:
+                valor_lista = round(float(valor_lista), 2)
+                if valor_lista < 0:
+                    erros.append("'valor_lista' deve ser >= 0.")
+                resultado["valor_lista"] = valor_lista
+            except (ValueError, TypeError):
+                erros.append("'valor_lista' deve ser um número.")
+                resultado["valor_lista"] = None
+
+        parcelado_raw = data.get("parcelado", False)
+        if isinstance(parcelado_raw, str):
+            parcelado_raw = parcelado_raw.lower() in ("true", "1", "sim", "yes")
+        parcelado = bool(parcelado_raw)
+        resultado["parcelado"] = parcelado
+
+        if parcelado:
+            num_parcelas = data.get("num_parcelas")
+            if num_parcelas is None:
+                erros.append("'num_parcelas' é obrigatório quando parcelado=true.")
+                resultado["num_parcelas"] = None
+            else:
+                try:
+                    num_parcelas = int(num_parcelas)
+                    if num_parcelas < 2:
+                        erros.append("'num_parcelas' deve ser >= 2.")
+                    resultado["num_parcelas"] = num_parcelas
+                except (ValueError, TypeError):
+                    erros.append("'num_parcelas' deve ser um inteiro.")
+                    resultado["num_parcelas"] = None
+
+            valor_parcela = data.get("valor_parcela")
+            if valor_parcela is not None:
+                try:
+                    valor_parcela = round(float(valor_parcela), 2)
+                    if valor_parcela < 0:
+                        erros.append("'valor_parcela' deve ser >= 0.")
+                    resultado["valor_parcela"] = valor_parcela
+                except (ValueError, TypeError):
+                    erros.append("'valor_parcela' deve ser um número.")
+                    resultado["valor_parcela"] = None
+            else:
+                resultado["valor_parcela"] = None
+        else:
+            resultado["num_parcelas"] = None
+            resultado["valor_parcela"] = None
+    else:
+        resultado["nome_cliente"] = str(data.get("nome_cliente", "")).strip() or None
+        resultado["valor_lista"] = None
+        resultado["parcelado"] = None
+        resultado["num_parcelas"] = None
+        resultado["valor_parcela"] = None
+
+    if erros:
+        raise ValidationError(erros)
+
+    return resultado

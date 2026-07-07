@@ -178,9 +178,13 @@ def login_usuario():
         subject=subject,
         role=role,
         ip_address=client_ip,
-        extra_claims={"nome": usuario.get("nome", "")},
+        extra_claims={"nome": usuario.get("nome", ""), "user_id": usuario["id"]},
     )
-    refresh_token = criar_refresh_token(subject=subject, role=role)
+    refresh_token = criar_refresh_token(
+        subject=subject,
+        role=role,
+        extra_claims={"user_id": usuario["id"]},
+    )
 
     _atualizar_ultimo_acesso(usuario["id"])
 
@@ -292,15 +296,19 @@ def refresh():
     # Revogar o refresh token antigo (single use)
     revogar_token(refresh_token)
 
-    # Emitir novos tokens
+    # Emitir novos tokens (preserva user_id do refresh token anterior)
+    user_id = payload.get("user_id")
+    extra = {"user_id": user_id} if user_id is not None else {}
     access_token = criar_access_token(
         subject=payload["sub"],
         role=payload["role"],
         ip_address=client_ip,
+        extra_claims=extra,
     )
     new_refresh = criar_refresh_token(
         subject=payload["sub"],
         role=payload["role"],
+        extra_claims=extra,
     )
 
     from api.config import JWT_ACCESS_TOKEN_EXPIRE_MINUTES

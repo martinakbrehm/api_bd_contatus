@@ -127,10 +127,11 @@ def require_auth(f):
             try:
                 payload = validar_token(token, expected_type="access")
                 g.auth_user = {
-                    "subject": payload["sub"],
-                    "role": payload["role"],
+                    "subject":   payload["sub"],
+                    "role":      payload["role"],
                     "auth_method": "jwt",
                     "token_jti": payload.get("jti"),
+                    "user_id":   payload.get("user_id"),
                 }
                 _clear_failed_attempts(client_ip)
                 return f(*args, **kwargs)
