@@ -9,6 +9,7 @@ Padrão atual de senha: argon2id (auto-descritivo — não usa salt externo).
 import pytest
 
 from api.utils.crypto import (
+    _hash_senha_pbkdf2,
     gerar_nonce,
     gerar_token_seguro,
     gerar_token_url_safe,
@@ -16,7 +17,10 @@ from api.utils.crypto import (
     hash_senha,
     hmac_sign,
     hmac_verify,
+    is_hash_argon2,
+    precisa_rehash,
     verificar_senha,
+    verificar_senha_legado,
 )
 
 
@@ -72,6 +76,58 @@ class TestHashSenha:
     def test_hash_nao_contem_senha_original(self):
         h = hash_senha("minha_senha")
         assert "minha_senha" not in h
+
+
+class TestDeteccaoFormato:
+    """Detecta formato do hash para decidir qual verificador usar."""
+
+    def test_is_hash_argon2_reconhece_argon2id(self):
+        h = hash_senha("qualquer")
+        assert is_hash_argon2(h) is True
+
+    def test_is_hash_argon2_rejeita_pbkdf2(self):
+        assert is_hash_argon2("abc123deadbeef$salthex") is False
+
+    def test_is_hash_argon2_rejeita_vazio(self):
+        assert is_hash_argon2("") is False
+
+    def test_precisa_rehash_falso_para_hash_recente(self):
+        h = hash_senha("senha")
+        assert precisa_rehash(h) is False
+
+
+class TestSenhaLegadoPBKDF2:
+    """Verificação de hashes PBKDF2 legados (formato hash_hex$salt_hex)."""
+
+    def _hash_legado(self, senha: str, salt: str = "deadbeef1234") -> str:
+        h = _hash_senha_pbkdf2(senha, salt)
+        return f"{h}${salt}"
+
+    def test_senha_correta_aceita(self):
+        stored = self._hash_legado("senha_secreta")
+        assert verificar_senha_legado("senha_secreta", stored) is True
+
+    def test_senha_errada_rejeitada(self):
+        stored = self._hash_legado("senha_correta")
+        assert verificar_senha_legado("senha_errada", stored) is False
+
+    def test_formato_invalido_retorna_false(self):
+        assert verificar_senha_legado("qualquer", "sem_cifrão") is False
+
+    def test_hash_vazio_retorna_false(self):
+        assert verificar_senha_legado("qualquer", "") is False
+
+    def test_salt_diferente_rejeita(self):
+        """Mesmo hash, salt diferente → falha."""
+        salt_real = "aabb"
+        h = _hash_senha_pbkdf2("senha", salt_real)
+        stored_com_salt_errado = f"{h}$ccdd"
+        assert verificar_senha_legado("senha", stored_com_salt_errado) is False
+
+    def test_tempo_constante_nao_curto_circuita(self):
+        """compare_digest não revela timing — sem asserção, mas não deve lançar."""
+        stored = self._hash_legado("abc")
+        verificar_senha_legado("xyz", stored)  # não lança
 
 
 class TestHMAC:
