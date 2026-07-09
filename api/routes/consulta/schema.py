@@ -106,17 +106,14 @@ def validar_consulta(data: dict) -> dict:
                 erros.append(f"UF inválida: '{uf}'")
         resultado["ufs"] = ufs_limpas
 
-    # ── Cidades (obrigatório) ─────────────────────────────────
+    # ── Cidades (opcional — obrigatório apenas quando sem CBOs) ──
     cidades = data.get("cidades") or data.get("cidade", [])
     if isinstance(cidades, str):
         cidades = [c.strip() for c in re.split(r"[,;\n]+", cidades) if c.strip()]
-    if not cidades:
-        erros.append("'cidades' é obrigatório: informe ao menos uma cidade.")
-        resultado["cidades"] = []
-    else:
+    cidades_limpas = []
+    if cidades:
         if len(cidades) > 50:
             erros.append("Máximo de 50 cidades por consulta.")
-        cidades_limpas = []
         for cidade in cidades[:50]:
             c = str(cidade).strip().upper()
             if len(c) > 100:
@@ -129,7 +126,8 @@ def validar_consulta(data: dict) -> dict:
                 cidades_limpas.append(c)
         if not cidades_limpas:
             erros.append("Nenhuma cidade válida foi informada.")
-        resultado["cidades"] = cidades_limpas
+    resultado["cidades"] = cidades_limpas
+    resultado["sem_cidade"] = not bool(cidades_limpas)
 
     # ── Bairros (opcional) ───────────────────────────────────
     bairros = data.get("bairros", [])
@@ -238,6 +236,13 @@ def validar_consulta(data: dict) -> dict:
     else:
         resultado["cbos"] = []
 
+    # Segurança: sem cidade exige ao menos 1 CBO (evita full scan por UF)
+    if resultado.get("sem_cidade") and not resultado.get("cbos"):
+        erros.append(
+            "Consulta sem cidade exige ao menos um CBO. "
+            "Informe 'cbos' ou adicione ao menos uma cidade."
+        )
+
     # ── DDDs (opcional, filtro Python) ──────────────────────────
     ddds = data.get("ddds", [])
     if isinstance(ddds, int):
@@ -309,6 +314,12 @@ def validar_consulta(data: dict) -> dict:
             erros.append("'quantidade' deve ser um número inteiro.")
             quantidade = None
     resultado["quantidade"] = quantidade
+
+    # Cap de segurança para consulta só por UF (sem cidade) — evita full scan
+    if resultado.get("sem_cidade"):
+        _CAP_SEM_CIDADE = 5000
+        if resultado["quantidade"] is None or resultado["quantidade"] > _CAP_SEM_CIDADE:
+            resultado["quantidade"] = _CAP_SEM_CIDADE
 
     # ── Alta renda ───────────────────────────────────────────
     alta_renda_raw = data.get("alta_renda", False)

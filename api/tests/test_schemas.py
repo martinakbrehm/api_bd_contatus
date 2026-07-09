@@ -8,7 +8,7 @@ import pytest
 
 from api.models.schemas import ValidationError, validar_consulta, validar_contagem, validar_login
 
-# Payload mínimo válido — cidades é obrigatório desde a atualização do schema
+# Payload mínimo válido com cidade explícita
 _BASE = {"ufs": ["SP"], "cidades": ["SAO PAULO"]}
 
 
@@ -53,11 +53,28 @@ class TestValidarConsulta:
 
     # ── Cidades ──────────────────────────────────────────────
 
-    def test_cidades_obrigatorias(self):
-        """cidades é campo obrigatório — omiti-lo deve retornar erro."""
+    def test_sem_cidade_sem_cbo_rejeitada(self):
+        """Sem cidades e sem CBOs deve retornar erro (evita full scan por UF)."""
         with pytest.raises(ValidationError) as exc:
             validar_consulta({"ufs": ["SP"]})
-        assert any("cidades" in e.lower() for e in exc.value.erros)
+        assert any("cbo" in e.lower() or "cidade" in e.lower() for e in exc.value.erros)
+
+    def test_sem_cidade_com_cbo_aceita(self):
+        """Sem cidades mas com ao menos 1 CBO é permitido."""
+        result = validar_consulta({"ufs": ["SP"], "cbos": ["521130"]})
+        assert result["sem_cidade"] is True
+        assert result["cidades"] == []
+        assert result["cbos"] == ["521130"]
+
+    def test_sem_cidade_cap_5000(self):
+        """Consulta sem cidade tem quantidade limitada a 5000 automaticamente."""
+        result = validar_consulta({"ufs": ["SP"], "cbos": ["521130"], "quantidade": 99999})
+        assert result["quantidade"] == 5000
+
+    def test_sem_cidade_quantidade_menor_preservada(self):
+        """Quantidade abaixo de 5000 é preservada em consulta sem cidade."""
+        result = validar_consulta({"ufs": ["SP"], "cbos": ["521130"], "quantidade": 100})
+        assert result["quantidade"] == 100
 
     def test_cidades_lista_valida(self):
         result = validar_consulta({"ufs": ["SP"], "cidades": ["SAO PAULO", "CAMPINAS"]})
@@ -272,7 +289,13 @@ class TestValidarContagem:
         with pytest.raises(ValidationError):
             validar_contagem({})
 
-    def test_contagem_sem_cidade_rejeitada(self):
+    def test_contagem_sem_cidade_sem_cbo_rejeitada(self):
+        """Contagem sem cidade e sem CBO deve ser rejeitada."""
         with pytest.raises(ValidationError) as exc:
             validar_contagem({"ufs": ["MG"]})
-        assert any("cidades" in e.lower() for e in exc.value.erros)
+        assert any("cbo" in e.lower() or "cidade" in e.lower() for e in exc.value.erros)
+
+    def test_contagem_sem_cidade_com_cbo_aceita(self):
+        """Contagem sem cidade mas com CBO deve ser aceita."""
+        result = validar_contagem({"ufs": ["MG"], "cbos": ["521130"]})
+        assert result["sem_cidade"] is True
