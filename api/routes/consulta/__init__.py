@@ -159,6 +159,7 @@ def _buscar_ate_quantidade(
     filtros_particao: dict,
     quantidade: int,
     exclude_cpfs: set[str] | None = None,
+    batch_size: int | None = None,
 ) -> tuple[pd.DataFrame, bool, int]:
     """
     Executa o loop de lotes para uma única partição de filtros.
@@ -185,14 +186,15 @@ def _buscar_ate_quantidade(
     filtros_python = {k: v for k, v in filtros_particao.items() if k in FILTROS_ETAPA_PYTHON}
     filtros_python["quantidade"] = None
 
+    _batch = batch_size if batch_size is not None else BATCH_SIZE_DB
+
     df_acumulado = pd.DataFrame()
     last_id: tuple[int, int] | None = None
     esgotou = False
     total_bruto = 0
 
     for _ in range(BATCH_MAX_ITERACOES):
-        # ── Etapa 1: busca no banco em lote fixo (BATCH_SIZE_DB) ─────────
-        sql_lote, params_lote = build_query(filtros_banco, limite=BATCH_SIZE_DB, last_id=last_id)
+        sql_lote, params_lote = build_query(filtros_banco, limite=_batch, last_id=last_id)
         df_lote = _executar_query(sql_lote, params_lote)
         total_bruto += len(df_lote)
 
@@ -207,7 +209,6 @@ def _buscar_ate_quantidade(
 
         # ── Etapa 2: limpeza e filtros Python ────────────────────────────
         df_limpo, _ = processar(df_lote, filtros_python)
-        # Exclui CPFs já coletados em partições anteriores
         if exclude_cpfs and "CPF" in df_limpo.columns:
             df_limpo = df_limpo[~df_limpo["CPF"].astype(str).isin(exclude_cpfs)]
         if not df_limpo.empty:
@@ -220,8 +221,7 @@ def _buscar_ate_quantidade(
         if len(df_acumulado) >= quantidade:
             break
 
-        if len(df_lote) < BATCH_SIZE_DB:
-            # Banco retornou menos que o lote — base esgotada
+        if len(df_lote) < _batch:
             esgotou = True
             break
 
@@ -269,6 +269,8 @@ def _pipeline_consulta(filtros: dict) -> dict:
     if not dist_items:
         filtros = _enriquecer_alta_renda(filtros)
 
+    cbos_lista = filtros.get("cbos", [])
+
     if dist_items:
         frames: list[pd.DataFrame] = []
         alguma_esgotou = False
@@ -313,6 +315,39 @@ def _pipeline_consulta(filtros: dict) -> dict:
                     seen_cpfs.update(df_p["CPF"].dropna().astype(str).tolist())
 
         df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        total_final = len(df)
+
+    elif cbos_lista:
+        # Um CBO por vez: batch menor evita timeout sem alterar a query indexada.
+        # sem_cidade → batch 200 (scan estadual mais pesado)
+        # com_cidade  → batch 500 (índice uf+cidade já filtra bem)
+        _batch_cbo = 200 if filtros.get("sem_cidade") else 500
+        frames_cbo: list[pd.DataFrame] = []
+        alguma_esgotou = False
+        total_bruto_buscado = 0
+        seen_cpfs_cbo: set[str] = set()
+        meta_cap = filtros["quantidade"]
+
+        for cbo in cbos_lista:
+            ja_coletados = sum(len(f) for f in frames_cbo)
+            if ja_coletados >= meta_cap:
+                break
+            restante = meta_cap - ja_coletados
+            filtros_cbo = {**filtros, "cbos": [cbo], "quantidade": restante}
+            df_p, esgotou_p, bruto_p = _buscar_ate_quantidade(
+                filtros_cbo, restante,
+                exclude_cpfs=seen_cpfs_cbo,
+                batch_size=_batch_cbo,
+            )
+            total_bruto_buscado += bruto_p
+            if esgotou_p:
+                alguma_esgotou = True
+            if not df_p.empty:
+                frames_cbo.append(df_p)
+                if "CPF" in df_p.columns:
+                    seen_cpfs_cbo.update(df_p["CPF"].dropna().astype(str).tolist())
+
+        df = pd.concat(frames_cbo, ignore_index=True) if frames_cbo else pd.DataFrame()
         total_final = len(df)
 
     else:

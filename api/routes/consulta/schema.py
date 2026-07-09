@@ -321,6 +321,12 @@ def validar_consulta(data: dict) -> dict:
         if resultado["quantidade"] is None or resultado["quantidade"] > _CAP_SEM_CIDADE:
             resultado["quantidade"] = _CAP_SEM_CIDADE
 
+    # Cap para qualquer consulta com CBOs — pipeline roda um CBO por vez
+    if resultado.get("cbos"):
+        _CAP_COM_CBO = 20_000
+        if resultado["quantidade"] is None or resultado["quantidade"] > _CAP_COM_CBO:
+            resultado["quantidade"] = _CAP_COM_CBO
+
     # ── Alta renda ───────────────────────────────────────────
     alta_renda_raw = data.get("alta_renda", False)
     if isinstance(alta_renda_raw, str):
