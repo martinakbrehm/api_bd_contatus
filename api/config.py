@@ -18,8 +18,15 @@ LOGS_DIR = BASE_DIR / "logs"
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── JWT ────────────────────────────────────────────────────────
-# OBRIGATÓRIO: defina API_JWT_SECRET como variável de ambiente em produção
-JWT_SECRET_KEY = os.environ.get("API_JWT_SECRET", secrets.token_hex(64))
+import logging as _logging
+_jwt_secret_env = os.environ.get("API_JWT_SECRET", "")
+if not _jwt_secret_env:
+    _logging.warning(
+        "SEGURANÇA: API_JWT_SECRET não definida — usando chave efêmera gerada em memória. "
+        "Todos os tokens serão invalidados ao reiniciar. "
+        "Defina API_JWT_SECRET no ambiente antes de usar em produção."
+    )
+JWT_SECRET_KEY = _jwt_secret_env or secrets.token_hex(64)
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = 30          # token de acesso: 30 min
 JWT_REFRESH_TOKEN_EXPIRE_MINUTES = 60 * 24    # refresh: 24 horas
@@ -80,7 +87,7 @@ CORS_MAX_AGE = 3600
 
 # ── Segurança Geral ───────────────────────────────────────────
 ENFORCE_HTTPS = os.environ.get("API_ENFORCE_HTTPS", "false").lower() == "true"
-MAX_CONTENT_LENGTH = 10 * 1024 * 1024  # 10 MB máximo por request
+MAX_CONTENT_LENGTH = 1 * 1024 * 1024   # 1 MB máximo por request (API JSON)
 
 # Timeout padrão de requisição (segundos) — usado quando o role não é reconhecido
 REQUEST_TIMEOUT = int(os.environ.get("API_REQUEST_TIMEOUT", "60"))

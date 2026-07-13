@@ -13,7 +13,13 @@ import time
 from flask import Blueprint, g, jsonify, request
 
 from api.auth.api_keys import validar_api_key
-from api.auth.decorators import _get_client_ip, require_auth
+from api.auth.decorators import (
+    _check_brute_force,
+    _clear_failed_attempts,
+    _get_client_ip,
+    _register_failed_attempt,
+    require_auth,
+)
 from api.auth.jwt_handler import criar_access_token, criar_refresh_token, revogar_token, validar_token
 from api.models.schemas import ValidationError, validar_login, validar_login_usuario
 from api.utils.audit_logger import log_request, log_security_event
@@ -114,6 +120,10 @@ def login_usuario():
     """
     client_ip = _get_client_ip()
 
+    brute_check = _check_brute_force(client_ip)
+    if brute_check:
+        return jsonify(brute_check), 429
+
     try:
         data = request.get_json(silent=True) or {}
         dados = validar_login_usuario(data)
@@ -126,10 +136,12 @@ def login_usuario():
     _MSG_CREDENCIAIS = "Credenciais inválidas."
 
     if usuario is None:
+        _register_failed_attempt(client_ip)
         log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="email não encontrado")
         return jsonify({"erro": _MSG_CREDENCIAIS}), 401
 
     if not usuario.get("ativo"):
+        _register_failed_attempt(client_ip)
         log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="usuário inativo")
         return jsonify({"erro": _MSG_CREDENCIAIS}), 401
 
@@ -145,6 +157,7 @@ def login_usuario():
             if exp.tzinfo is None:
                 exp = exp.replace(tzinfo=timezone.utc)
             if datetime.now(timezone.utc) > exp:
+                _register_failed_attempt(client_ip)
                 log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="conta expirada")
                 return jsonify({"erro": _MSG_CREDENCIAIS}), 401
         except (ValueError, TypeError):
@@ -165,8 +178,11 @@ def login_usuario():
             rehash_necessario = True
 
     if not senha_ok:
+        _register_failed_attempt(client_ip)
         log_security_event("LOGIN_USUARIO_FAILED", ip=client_ip, reason="senha incorreta")
         return jsonify({"erro": _MSG_CREDENCIAIS}), 401
+
+    _clear_failed_attempts(client_ip)
 
     if rehash_necessario:
         _atualizar_senha_hash(usuario["id"], hash_senha(dados["senha"]))

@@ -95,11 +95,8 @@ def _extract_bearer_token() -> Optional[str]:
 
 
 def _extract_api_key() -> Optional[str]:
-    """Extrai a API Key do header X-API-Key ou query param."""
-    # Prioridade: header > query param
+    """Extrai a API Key exclusivamente do header X-API-Key."""
     key = request.headers.get("X-API-Key", "")
-    if not key:
-        key = request.args.get("api_key", "")
     return key.strip() if key else None
 
 
