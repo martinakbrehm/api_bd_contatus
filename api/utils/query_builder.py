@@ -35,6 +35,7 @@ from api.db_settings import (
     TABELA_CBO,
 )
 from api.utils.bairros_aliases import expandir_bairros
+from api.utils.cidades_aliases import expandir_cidades
 
 
 # Idades padrão quando o cliente não especifica
@@ -114,8 +115,12 @@ def build_query(
     # Segue o mesmo padrão da consulta base do sistema.
     from_str = f"{t} lc"
     if usar_cbo:
+        # INNER JOIN quando CBOs específicos são solicitados — descarta linhas sem CBO
+        # na junção, reduzindo o volume processado antes do WHERE.
+        # LEFT JOIN mantido apenas quando o CBO é opcional (tem_cbo="incluir").
+        join_tipo = "LEFT JOIN" if (tem_cbo == "incluir" and not cbos_solicitados) else "JOIN"
         from_str += (
-            f"\nLEFT JOIN {TABELA_CBO_CPF} e"
+            f"\n{join_tipo} {TABELA_CBO_CPF} e"
             f"  ON lc.{c['cpf']} = e.cpf"
             f"\nLEFT JOIN {TABELA_CBO} d ON e.cbo = d.cbo"
         )
@@ -133,11 +138,16 @@ def build_query(
     params.extend([uf.strip().upper() for uf in ufs])
 
     # 2. CIDADE — usa idx_latest_contacts_uf_cidade (composto com UF)
+    #    expandir_cidades() inclui variantes com typos conhecidos no banco
     cidades = filtros.get("cidades", [])
     if cidades:
-        ph_cid = ", ".join(["%s"] * len(cidades))
+        cidades_expandidas = expandir_cidades(
+            [cidade.strip().upper() for cidade in cidades],
+            ufs=ufs,
+        )
+        ph_cid = ", ".join(["%s"] * len(cidades_expandidas))
         where_clauses.append(f"lc.{c['cidade']} IN ({ph_cid})")
-        params.extend([cidade.strip().upper() for cidade in cidades])
+        params.extend(cidades_expandidas)
 
     # 3. BAIRRO — usa idx_latest_contacts_bairro
     #    expandir_bairros() inclui variantes abreviadas do banco (JD=JARDIM, VL=VILA, etc.)

@@ -116,11 +116,11 @@ MAX_REGISTROS_PADRAO = 1000
 # limpeza Python em cada lote e acumula até atingir a quantidade pedida.
 #
 # BATCH_MAX_ITERACOES: teto de segurança contra loop infinito.
-#   Com 5.000 linhas/lote e aproveitamento médio de ~80%, são necessárias
-#   ~250 iterações para entregar 999.999 registros limpos.
-#   Valor 300 garante margem mesmo com bases de baixo aproveitamento.
-BATCH_SIZE_DB = int(os.environ.get("API_BATCH_SIZE_DB", "5000"))    # linhas por query ao banco
-BATCH_MAX_ITERACOES = int(os.environ.get("API_BATCH_MAX_ITER", "300"))  # máx iterações
+#   Com 3.000 linhas/lote e aproveitamento médio de ~80%, são necessárias
+#   ~420 iterações para entregar 999.999 registros limpos.
+#   Valor 500 garante margem mesmo com bases de baixo aproveitamento.
+BATCH_SIZE_DB = int(os.environ.get("API_BATCH_SIZE_DB", "3000"))    # linhas por query ao banco
+BATCH_MAX_ITERACOES = int(os.environ.get("API_BATCH_MAX_ITER", "500"))  # máx iterações
 
 # ── Cache Redis ───────────────────────────────────────────────
 # REDIS_URL ex: redis://localhost:6379/0  ou  redis://:senha@host:6379/0

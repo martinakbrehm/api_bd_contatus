@@ -70,12 +70,14 @@ def create_app() -> Flask:
     from api.routes.health import health_bp
     from api.routes.admin import admin_bp
     from api.routes.enriquecimento import enriquecimento_bp
+    from api.routes.localidades import localidades_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(consulta_bp)
     app.register_blueprint(health_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(enriquecimento_bp)
+    app.register_blueprint(localidades_bp)
 
     # ── 6. Limpeza automática de tokens expirados (output/temp/) ──────────
     # APScheduler remove parquets com mais de 30 minutos a cada 10 minutos.

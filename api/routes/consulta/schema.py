@@ -278,7 +278,21 @@ def validar_consulta(data: dict) -> dict:
                     erros.append("Cada item de 'distribuicao' deve ser um objeto.")
                     continue
                 cidade_item = str(item.get("cidade", "")).strip().upper()
-                bairro_item = str(item.get("bairro",  "")).strip().upper()
+                # bairro: string legada (compatibilidade) ou bairros: lista (novo)
+                bairros_lista = item.get("bairros")
+                if isinstance(bairros_lista, list):
+                    bairros_item = [str(b).strip().upper() for b in bairros_lista if str(b).strip()]
+                else:
+                    bairro_str = str(item.get("bairro", "")).strip().upper()
+                    bairros_item = [bairro_str] if bairro_str else []
+                # alta_renda por item (herda global se não informado)
+                ar_raw = item.get("alta_renda")
+                if ar_raw is None:
+                    alta_renda_item = None  # herda global
+                elif isinstance(ar_raw, str):
+                    alta_renda_item = ar_raw.lower() in ("true", "1", "sim", "yes")
+                else:
+                    alta_renda_item = bool(ar_raw)
                 genero_raw  = str(item.get("genero",  "AMBOS")).strip().upper()
                 genero_item = _MAPA_GENERO_FATIA.get(genero_raw)
                 if genero_item is None:
@@ -294,10 +308,11 @@ def validar_consulta(data: dict) -> dict:
                     erros.append("'distribuicao': quantidade deve ser um inteiro.")
                     continue
                 dist_limpa.append({
-                    "cidade":     cidade_item,
-                    "bairro":     bairro_item,
-                    "genero":     genero_item,
-                    "quantidade": qtd_item,
+                    "cidade":      cidade_item,
+                    "bairros":     bairros_item,
+                    "alta_renda":  alta_renda_item,
+                    "genero":      genero_item,
+                    "quantidade":  qtd_item,
                 })
             distribuicao = dist_limpa if dist_limpa else None
     resultado["distribuicao"] = distribuicao
@@ -332,6 +347,19 @@ def validar_consulta(data: dict) -> dict:
     if isinstance(alta_renda_raw, str):
         alta_renda_raw = alta_renda_raw.lower() in ("true", "1", "sim", "yes")
     resultado["alta_renda"] = bool(alta_renda_raw)
+
+    # ── Bairros por cidade (override manual para cidades sem mapeamento) ──
+    # Formato: {"CIDADE_A": ["BAIRRO 1", "BAIRRO 2"], "CIDADE_B": [...]}
+    bairros_por_cidade_raw = data.get("bairros_por_cidade", {})
+    bairros_por_cidade: dict[str, list[str]] = {}
+    if isinstance(bairros_por_cidade_raw, dict):
+        for cidade_k, bairros_v in bairros_por_cidade_raw.items():
+            cidade_k = str(cidade_k).strip().upper()
+            if isinstance(bairros_v, list):
+                limpos = [str(b).strip().upper() for b in bairros_v if str(b).strip()]
+                if limpos:
+                    bairros_por_cidade[cidade_k] = limpos
+    resultado["bairros_por_cidade"] = bairros_por_cidade
 
     if erros:
         raise ValidationError(erros)

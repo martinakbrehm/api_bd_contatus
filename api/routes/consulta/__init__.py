@@ -127,32 +127,131 @@ def _executar_count(sql_count: str, params: list) -> int:
 
 def _enriquecer_alta_renda(filtros: dict) -> dict:
     """
-    Se alta_renda=True e nenhum bairro foi especificado na requisição,
-    injeta os bairros de alta renda para cada (uf, cidade) informados.
-    Levanta ValueError se alguma cidade não tiver bairros cadastrados.
+    Injeta bairros nos filtros conforme alta_renda e bairros_por_cidade.
+
+    Prioridade por cidade:
+      1. bairros_por_cidade[cidade]  → usa esses bairros manuais
+      2. alta_renda=True             → busca bairros no BD (levanta erro se não mapeada)
+      3. nenhum                      → sem filtro de bairro
+
+    Para consultas com uma única cidade, mantém o campo "bairros" global.
+    Para múltiplas cidades com configs diferentes, o enriquecimento por
+    cidade é feito no loop de distribuicao (ver _resolver_bairros_cidade).
     """
-    if not filtros.get("alta_renda") or filtros.get("bairros"):
+    alta_renda       = filtros.get("alta_renda", False)
+    bairros_por_cid  = filtros.get("bairros_por_cidade", {})
+    bairros_existentes = filtros.get("bairros")
+
+    # Sem nenhum enriquecimento necessário
+    if not alta_renda and not bairros_por_cid:
         return filtros
+
+    # Se já tem bairros explícitos E não há bairros_por_cidade, respeita o existente
+    if bairros_existentes and not bairros_por_cid:
+        return filtros
+
+    cidades  = filtros.get("cidades", [])
+    ufs      = filtros.get("ufs", [])
+
+    # Caso simples: uma única cidade (ou sem cidade)
+    if len(cidades) <= 1:
+        cidade = cidades[0] if cidades else ""
+        # bairros_por_cidade tem prioridade sobre alta_renda
+        if cidade and cidade in bairros_por_cid:
+            return {**filtros, "bairros": bairros_por_cid[cidade]}
+        if alta_renda and not bairros_existentes:
+            bairros: list[str] = []
+            visto: set[str] = set()
+            for uf in ufs:
+                for b in _buscar_bairros_ar(uf, cidade):
+                    if b not in visto:
+                        bairros.append(b); visto.add(b)
+            if not bairros and cidade:
+                raise ValueError(
+                    f"A cidade {cidade} não possui bairros de alta renda cadastrados. "
+                    f"Use 'bairros_por_cidade' para informar bairros manualmente."
+                )
+            return {**filtros, "bairros": bairros}
+        return filtros
+
+    # Múltiplas cidades: resolve bairros por cidade e achata na lista global.
+    # Funciona tanto com bairros_por_cidade quanto com alta_renda puro.
     bairros: list[str] = []
     visto: set[str] = set()
     sem_mapeamento: list[str] = []
-    for uf in filtros.get("ufs", []):
-        for cidade in filtros.get("cidades", []):
-            bairros_cidade = _buscar_bairros_ar(uf, cidade)
-            if not bairros_cidade:
-                sem_mapeamento.append(cidade)
+
+    def _adicionar(bs: list[str]) -> None:
+        for b in bs:
+            if b not in visto:
+                bairros.append(b); visto.add(b)
+
+    for cidade in cidades:
+        # 1. Override manual tem prioridade
+        if cidade in bairros_por_cid:
+            _adicionar(bairros_por_cid[cidade])
+            continue
+        # 2. Alta renda: tenta todos os UFs; cidade ok se qualquer UF retornar bairros
+        if alta_renda and not bairros_existentes:
+            bs_cidade: list[str] = []
+            for uf in ufs:
+                bs_cidade.extend(_buscar_bairros_ar(uf, cidade))
+            if bs_cidade:
+                _adicionar(bs_cidade)
             else:
-                for b in bairros_cidade:
-                    if b not in visto:
-                        bairros.append(b)
-                        visto.add(b)
+                sem_mapeamento.append(cidade)
+
     if sem_mapeamento:
         lista = ", ".join(sem_mapeamento)
         raise ValueError(
             f"A(s) cidade(s) {lista} não possuem bairros de alta renda cadastrados. "
-            f"Remova 'alta_renda' para consultar sem esse filtro."
+            f"Use 'bairros_por_cidade' para informar bairros manualmente."
         )
-    return {**filtros, "bairros": bairros}
+
+    if bairros:
+        return {**filtros, "bairros": bairros}
+    return filtros
+
+
+def _resolver_bairros_cidade(cidade: str, item_alta_renda, item_bairros: list[str],
+                              filtros_globais: dict) -> list[str]:
+    """
+    Resolve os bairros para uma cidade específica no loop de distribuicao.
+    Retorna lista de bairros (vazia = sem filtro de bairro).
+
+    Prioridade:
+      1. bairros explícitos no item
+      2. bairros_por_cidade[cidade] do filtro global
+      3. alta_renda do item (ou herdado global) → lookup no BD
+      4. []
+    """
+    # 1. Bairros explícitos no item têm prioridade máxima
+    if item_bairros:
+        return item_bairros
+
+    # 2. bairros_por_cidade do filtro global
+    bairros_por_cid = filtros_globais.get("bairros_por_cidade", {})
+    if cidade in bairros_por_cid:
+        return bairros_por_cid[cidade]
+
+    # 3. alta_renda: item override ou global
+    usar_ar = item_alta_renda if item_alta_renda is not None else filtros_globais.get("alta_renda", False)
+    if usar_ar:
+        bairros: list[str] = []
+        visto: set[str] = set()
+        # Tenta todos os UFs — cidade pode pertencer a qualquer um deles
+        for uf in filtros_globais.get("ufs", []):
+            for b in _buscar_bairros_ar(uf, cidade):
+                if b not in visto:
+                    bairros.append(b); visto.add(b)
+        if not bairros:
+            nome = cidade or "(sem cidade)"
+            raise ValueError(
+                f"A cidade {nome} não possui bairros de alta renda cadastrados. "
+                f"Use 'bairros_por_cidade' para informar bairros manualmente."
+            )
+        return bairros
+
+    return []
 
 
 def _buscar_ate_quantidade(
@@ -278,31 +377,15 @@ def _pipeline_consulta(filtros: dict) -> dict:
         seen_cpfs: set[str] = set()
 
         for item in dist_items:
-            cidade_i = str(item.get("cidade", "")).strip().upper()
-            bairro_i = str(item.get("bairro",  "")).strip().upper()
-            genero_i = str(item.get("genero",  "AMBOS")).strip().upper()
-            qtd_i    = int(item["quantidade"])
+            cidade_i      = str(item.get("cidade", "")).strip().upper()
+            item_bairros  = item.get("bairros", [])   # lista (novo schema)
+            item_ar       = item.get("alta_renda")    # None = herda global
+            genero_i      = str(item.get("genero", "AMBOS")).strip().upper()
+            qtd_i         = int(item["quantidade"])
 
             particao = {**filtros}
             particao["cidades"] = [cidade_i] if cidade_i else (filtros.get("cidades") or [])
-
-            # Alta renda por cidade na distribuicao: lookup por cidade específica
-            if filtros.get("alta_renda") and not bairro_i:
-                bairros_ar: list[str] = []
-                visto_ar: set[str] = set()
-                for uf in filtros.get("ufs", []):
-                    for b in _buscar_bairros_ar(uf, cidade_i):
-                        if b not in visto_ar:
-                            bairros_ar.append(b)
-                            visto_ar.add(b)
-                if not bairros_ar:
-                    raise ValueError(
-                        f"A cidade {cidade_i} não possui bairros de alta renda cadastrados. "
-                        f"Remova 'alta_renda' para consultar sem esse filtro."
-                    )
-                particao["bairros"] = bairros_ar
-            else:
-                particao["bairros"] = [bairro_i] if bairro_i else (filtros.get("bairros") or [])
+            particao["bairros"] = _resolver_bairros_cidade(cidade_i, item_ar, item_bairros, filtros)
             particao["genero"]  = genero_i
 
             df_p, esgotou, bruto = _buscar_ate_quantidade(particao, qtd_i, exclude_cpfs=seen_cpfs)
@@ -318,10 +401,8 @@ def _pipeline_consulta(filtros: dict) -> dict:
         total_final = len(df)
 
     elif cbos_lista:
-        # Um CBO por vez: batch menor evita timeout sem alterar a query indexada.
-        # sem_cidade → batch 200 (scan estadual mais pesado)
-        # com_cidade  → batch 500 (índice uf+cidade já filtra bem)
-        _batch_cbo = 200 if filtros.get("sem_cidade") else 500
+        # Um CBO por vez com INNER JOIN — batch 3000 alinhado ao BATCH_SIZE_DB padrão.
+        _batch_cbo = 3000
         frames_cbo: list[pd.DataFrame] = []
         alguma_esgotou = False
         total_bruto_buscado = 0

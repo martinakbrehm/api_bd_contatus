@@ -368,3 +368,71 @@ def me():
         "role": auth.get("role"),
         "auth_method": auth.get("auth_method"),
     }), 200
+
+
+@auth_bp.route("/trocar-senha", methods=["POST"])
+@require_auth
+def trocar_senha():
+    """
+    Troca a senha do usuário autenticado.
+
+    Requer: Authorization: Bearer <access_token de login_usuario>
+
+    Body (JSON):
+      { "senha_atual": "...", "senha_nova": "..." }
+
+    Resposta (200):
+      { "mensagem": "Senha alterada com sucesso." }
+    """
+    auth = g.auth_user
+
+    # Apenas tokens gerados via login_usuario têm user_id no payload.
+    # Tokens de API Key não têm linha em usuarios_app e não podem trocar senha.
+    if auth.get("user_id") is None:
+        return jsonify({"erro": "Operação disponível apenas para login por e-mail."}), 403
+
+    data = request.get_json(silent=True) or {}
+    senha_atual = data.get("senha_atual", "").strip()
+    senha_nova = data.get("senha_nova", "").strip()
+
+    if not senha_atual or not senha_nova:
+        return jsonify({"erro": "'senha_atual' e 'senha_nova' são obrigatórios."}), 400
+
+    if len(senha_nova) < 8:
+        return jsonify({"erro": "A nova senha deve ter ao menos 8 caracteres."}), 400
+
+    if senha_atual == senha_nova:
+        return jsonify({"erro": "A nova senha deve ser diferente da atual."}), 400
+
+    email = auth.get("subject")
+    usuario = _buscar_usuario_por_email(email)
+
+    if not usuario:
+        return jsonify({"erro": "Usuário não encontrado."}), 404
+
+    # Verifica senha atual (aceita argon2 e legado PBKDF2)
+    hash_armazenado = usuario.get("senha_hash", "")
+    if is_hash_argon2(hash_armazenado):
+        valida = verificar_senha(senha_atual, hash_armazenado)
+    else:
+        valida = verificar_senha_legado(senha_atual, hash_armazenado)
+
+    if not valida:
+        log_security_event(
+            "TROCAR_SENHA_FAILED",
+            ip=_get_client_ip(),
+            subject=email,
+            reason="senha atual incorreta",
+        )
+        return jsonify({"erro": "Senha atual incorreta."}), 401
+
+    _atualizar_senha_hash(usuario["id"], hash_senha(senha_nova))
+
+    log_security_event(
+        "TROCAR_SENHA_SUCCESS",
+        severity="INFO",
+        ip=_get_client_ip(),
+        subject=email,
+    )
+
+    return jsonify({"mensagem": "Senha alterada com sucesso."}), 200

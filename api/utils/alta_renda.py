@@ -5,6 +5,7 @@ Cache em memória com TTL de 30 minutos para evitar queries repetidas.
 from __future__ import annotations
 
 import time
+import unicodedata
 
 import mysql.connector
 
@@ -15,17 +16,28 @@ _CACHE_TS: dict[tuple[str, str], float] = {}
 _TTL = 1800  # 30 minutos
 
 
-def buscar_bairros(uf: str, cidade: str) -> list[str]:
+def _sem_acento(s: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
+def buscar_bairros(uf: str, cidade: str) -> tuple[list[str], str | None]:
     """
-    Retorna lista de bairros de alta renda para (uf, cidade).
-    Lista vazia se a cidade não está mapeada ou a tabela ainda não existe.
+    Retorna (bairros, erro_debug) para (uf, cidade).
+    Normaliza acentos antes da query — a tabela bairros_alta_renda não tem acentos.
     """
-    chave = (uf.upper(), cidade.upper())
+    uf_norm     = _sem_acento(uf.strip().upper())
+    cidade_norm = _sem_acento(cidade.strip().upper())
+    chave = (uf_norm, cidade_norm)
+
     agora = time.monotonic()
     if chave in _CACHE and agora - _CACHE_TS.get(chave, 0) < _TTL:
-        return _CACHE[chave]
+        return _CACHE[chave], None
 
     conn = None
+    erro_debug = None
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cur = conn.cursor()
@@ -35,12 +47,13 @@ def buscar_bairros(uf: str, cidade: str) -> list[str]:
             "JOIN uf u ON u.ID = b.uf_id "
             "WHERE u.UF = %s AND b.cidade = %s "
             "ORDER BY b.ranking, b.bairro",
-            chave,
+            (uf_norm, cidade_norm),
         )
         bairros = [row[0] for row in cur.fetchall()]
         cur.close()
-    except Exception:
+    except Exception as exc:
         bairros = []
+        erro_debug = str(exc)
     finally:
         if conn:
             try:
@@ -50,7 +63,7 @@ def buscar_bairros(uf: str, cidade: str) -> list[str]:
 
     _CACHE[chave] = bairros
     _CACHE_TS[chave] = agora
-    return bairros
+    return bairros, erro_debug
 
 
 def limpar_cache() -> None:
